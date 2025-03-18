@@ -1,0 +1,112 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id      Int      @id @default(autoincrement())
+  email   String   @unique
+  password String?
+  name    String?
+  photo_url String?
+  google_token_id String?
+  locale String @db.VarChar(3) @default("es")
+  created_at DateTime @default(now())
+
+  @@map("users")
+}
+
+enum AccountType {
+  CASH
+  CREDIT_CARD
+  DEBIT_CARD
+  OTHER
+}
+
+model Account {
+  id      Int      @id @default(autoincrement())
+  name    String
+  balance Float
+  credit_limit Float?
+  type    AccountType
+  created_at DateTime @default(now())
+  Expense Expense[]
+  Income Income[]
+
+  @@map("accounts")
+}
+
+model Tax {
+  id          Int      @id @default(autoincrement())
+  name        String
+  rate        Float
+  created_at  DateTime @default(now())
+
+  expenses    ExpenseTax[]
+  incomes     IncomeTax[]
+
+  @@map("taxes")
+}
+
+model Expense {
+  id          Int      @id @default(autoincrement())
+  amount      Float
+  concept     String
+  date        DateTime
+  invoiced    Boolean
+  account_id  Int
+  created_at  DateTime @default(now())
+
+  account     Account @relation(fields: [account_id], references: [id])
+  taxes       ExpenseTax[]
+
+  @@map("expenses")
+}
+
+model Income {
+  id          Int      @id @default(autoincrement())
+  amount      Float
+  concept     String
+  date        DateTime
+  invoiced    Boolean
+  account_id  Int
+  created_at  DateTime @default(now())
+
+  account     Account @relation(fields: [account_id], references: [id])
+  taxes       IncomeTax[]
+
+  @@map("incomes")
+}
+
+model ExpenseTax {
+  expense_id  Int
+  tax_id      Int
+
+  expense     Expense @relation(fields: [expense_id], references: [id], onDelete: Cascade)
+  tax         Tax @relation(fields: [tax_id], references: [id], onDelete: Cascade)
+
+  @@id([expense_id, tax_id]) // Clave primaria compuesta
+  @@map("expense_taxes")
+}
+
+model IncomeTax {
+  income_id   Int
+  tax_id      Int
+
+  income      Income @relation(fields: [income_id], references: [id], onDelete: Cascade)
+  tax         Tax @relation(fields: [tax_id], references: [id], onDelete: Cascade)
+
+  @@id([income_id, tax_id]) // Clave primaria compuesta
+  @@map("income_taxes")
+}
