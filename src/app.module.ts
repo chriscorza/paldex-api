@@ -6,11 +6,12 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './auth/auth.guard';
 import { UserModule } from './user/user.module';
+import { IncomesModule } from './incomes/incomes.module';
 
 @Module({
   imports: [AuthModule, ConfigModule.forRoot({
     envFilePath: '.env.prod'
-  }), UserModule],
+  }), UserModule, IncomesModule],
   controllers: [AppController],
   providers: [AppService,{
     provide: APP_GUARD,
