@@ -1,6 +1,9 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
 import { IncomesService } from './incomes.service';
 import { Public } from 'src/auth/auth.decorator';
+import { Prisma } from '.prisma/client';
+import * as request from 'supertest';
+import { FilteredInput } from 'src/types';
 
 @Controller('incomes')
 export class IncomesController {
@@ -12,8 +15,11 @@ export class IncomesController {
   // }
 
   @Get()
-  findAll() {
-    const incomesWhereInput = {}; // Replace with appropriate filter criteria
+  findAll(@Query() query: FilteredInput) {
+    const { start_date, end_date , search , sort_by, order } = query;
+    const incomesWhereInput : Prisma.IncomeWhereInput = {
+
+    }; // Replace with appropriate filter criteria
     return this.incomesService.findAll(incomesWhereInput);
   }
 
