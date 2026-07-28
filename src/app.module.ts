@@ -9,13 +9,21 @@ import { UserModule } from './user/user.module';
 import { IncomesModule } from './incomes/incomes.module';
 
 @Module({
-  imports: [AuthModule, ConfigModule.forRoot({
-    envFilePath: '.env.prod'
-  }), UserModule, IncomesModule],
+  imports: [
+    AuthModule,
+    ConfigModule.forRoot({
+      envFilePath: '.env.prod',
+    }),
+    UserModule,
+    IncomesModule,
+  ],
   controllers: [AppController],
-  providers: [AppService,{
-    provide: APP_GUARD,
-    useClass: AuthGuard
-  }],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: AuthGuard,
+    },
+  ],
 })
 export class AppModule {}

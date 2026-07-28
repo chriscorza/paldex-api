@@ -1,28 +1,34 @@
-import { Type } from "class-transformer";
-import { IsDate, IsEmail, isEmail, IsLocale, IsString, IsStrongPassword, IsUrl, IsUUID, ValidateNested } from "class-validator";
+import {
+  IsDate,
+  IsEmail,
+  IsLocale,
+  IsString,
+  IsStrongPassword,
+  IsUrl,
+  IsUUID,
+} from 'class-validator';
 export class User {
-    @IsUUID()
-    id: string;
+  @IsUUID()
+  id: string;
 
-    @IsEmail()
-    email: string;
+  @IsEmail()
+  email: string;
 
-    @IsStrongPassword()
-    password: string;
+  @IsStrongPassword()
+  password: string;
 
-    @IsString()
-    name: string;
+  @IsString()
+  name: string;
 
-    @IsUrl()
-    photo_url: string;
+  @IsUrl()
+  photo_url: string;
 
-    @IsString()
-    google_token_id: string;
+  @IsString()
+  google_token_id: string;
 
-    @IsLocale()
-    locale: string;
+  @IsLocale()
+  locale: string;
 
-    @IsDate()
-    created_at: Date;
-
+  @IsDate()
+  created_at: Date;
 }

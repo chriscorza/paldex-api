@@ -1,8 +1,7 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { IncomesService } from './incomes.service';
 import { Public } from 'src/auth/auth.decorator';
 import { Prisma } from '.prisma/client';
-import * as request from 'supertest';
 import { FilteredInput } from 'src/types';
 
 @Controller('incomes')
@@ -13,13 +12,9 @@ export class IncomesController {
   // create(@Body() createIncomeDto: CreateIncomeDto) {
   //   return this.incomesService.create(createIncomeDto);
   // }
-
   @Get()
-  findAll(@Query() query: FilteredInput) {
-    const { start_date, end_date , search , sort_by, order } = query;
-    const incomesWhereInput : Prisma.IncomeWhereInput = {
-
-    }; // Replace with appropriate filter criteria
+  findAll(@Query() _query: FilteredInput) {
+    const incomesWhereInput: Prisma.IncomeWhereInput = {}; // Replace with appropriate filter criteria, based on `_query`
     return this.incomesService.findAll(incomesWhereInput);
   }
 
