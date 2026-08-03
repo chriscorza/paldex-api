@@ -1,34 +1,19 @@
-import {
-  IsDate,
-  IsEmail,
-  IsLocale,
-  IsString,
-  IsStrongPassword,
-  IsUrl,
-  IsUUID,
-} from 'class-validator';
-export class User {
-  @IsUUID()
-  id: string;
+import { Prisma } from '@prisma/client';
 
-  @IsEmail()
+export const USER_SELECT = {
+  id: true,
+  email: true,
+  name: true,
+  photo_url: true,
+  locale: true,
+  created_at: true,
+} satisfies Prisma.UserSelect;
+
+export type SafeUser = {
+  id: number;
   email: string;
-
-  @IsStrongPassword()
-  password: string;
-
-  @IsString()
-  name: string;
-
-  @IsUrl()
-  photo_url: string;
-
-  @IsString()
-  google_token_id: string;
-
-  @IsLocale()
+  name: string | null;
+  photo_url: string | null;
   locale: string;
-
-  @IsDate()
   created_at: Date;
-}
+};

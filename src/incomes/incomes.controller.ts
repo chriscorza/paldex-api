@@ -1,35 +1,97 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  ParseIntPipe,
+  Req,
+} from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { IncomesService } from './incomes.service';
-import { Public } from 'src/auth/auth.decorator';
-import { Prisma } from '.prisma/client';
-import { FilteredInput } from 'src/types';
+import { RequirePermissions } from '../auth/permissions.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { CreateIncomeDto } from './dto/create-income.dto';
+import { UpdateIncomeDto } from './dto/update-income.dto';
+import { FilterIncomesDto } from './dto/filter-incomes.dto';
+import { OwnershipContext } from '../common/ownership';
 
+@ApiTags('incomes')
+@ApiBearerAuth('jwt')
 @Controller('incomes')
+@RequirePermissions('income:read')
 export class IncomesController {
   constructor(private readonly incomesService: IncomesService) {}
-  @Public()
-  // @Post()
-  // create(@Body() createIncomeDto: CreateIncomeDto) {
-  //   return this.incomesService.create(createIncomeDto);
-  // }
-  @Get()
-  findAll(@Query() _query: FilteredInput) {
-    const incomesWhereInput: Prisma.IncomeWhereInput = {}; // Replace with appropriate filter criteria, based on `_query`
-    return this.incomesService.findAll(incomesWhereInput);
+
+  @Post()
+  @RequirePermissions('income:create')
+  create(
+    @Req() request: any,
+    @CurrentUser() user: any,
+    @Body() dto: CreateIncomeDto,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: request.permissionScope || 'ANY',
+    };
+    return this.incomesService.create(ctx, dto);
   }
 
-  // @Get(':id')
-  // findOne(@Param('id') id: string) {
-  //   return this.incomesService.findOne(+id);
-  // }
+  @Get()
+  findAll(
+    @Req() request: any,
+    @CurrentUser() user: any,
+    @Query() filters: FilterIncomesDto,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: request.permissionScope || 'ANY',
+    };
+    return this.incomesService.findAll(ctx, filters);
+  }
 
-  // @Patch(':id')
-  // update(@Param('id') id: string, @Body() updateIncomeDto: UpdateIncomeDto) {
-  //   return this.incomesService.update(+id, updateIncomeDto);
-  // }
+  @Get(':id')
+  findOne(
+    @Req() request: any,
+    @CurrentUser() user: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: request.permissionScope || 'ANY',
+    };
+    return this.incomesService.findOne(ctx, id);
+  }
 
-  // @Delete(':id')
-  // remove(@Param('id') id: string) {
-  //   return this.incomesService.remove(+id);
-  // }
+  @Patch(':id')
+  @RequirePermissions('income:update')
+  update(
+    @Req() request: any,
+    @CurrentUser() user: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateIncomeDto,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: request.permissionScope || 'ANY',
+    };
+    return this.incomesService.update(ctx, id, dto);
+  }
+
+  @Delete(':id')
+  @RequirePermissions('income:delete')
+  remove(
+    @Req() request: any,
+    @CurrentUser() user: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: request.permissionScope || 'ANY',
+    };
+    return this.incomesService.remove(ctx, id);
+  }
 }

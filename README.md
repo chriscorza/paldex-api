@@ -97,3 +97,11 @@ Nest is an MIT-licensed open source project. It can grow thanks to the sponsors 
 ## License
 
 Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+
+## Technical Debt
+
+- **`balance` in `accounts` is not derived from transactions.** The `Account.balance` column stores a user-declared value and is not automatically recalculated when incomes or expenses are created/updated/deleted. With both incomes and expenses in production, the discrepancy between the declared `balance` and the real total of transactions is now visible to the end user and should be resolved before launching. Options: derive via aggregation on read, or update transactionally on every income/expense write.
+- **`Tax.name` uniqueness is enforced in application code, not in the database.** There is no `@unique` constraint on the column, so concurrent writes or direct DB access can create duplicates. A migration adding the unique index should be done once any existing duplicates are cleaned up.
+- **Editing a `Tax.rate` retroactively changes the meaning of historical records.** When a tax rate is updated via `PATCH /taxes/:id`, any future calculation on incomes/expenses that reference that tax will use the new rate. There is no versioning — the fix would require freezing the rate on `IncomeTax`/`ExpenseTax` at association time.
+- **Passwords are stored in plain text.** `AuthService.signIn` compares with `!==` and no hashing is applied. Although `password` no longer leaks in API responses (fixed by `add-user-endpoints`), a DB dump or `prisma studio` still exposes credentials. Must introduce bcrypt/argon2 hashing as the next change. Any users registered before this fix should consider their passwords compromised.
+- **Tokens remain valid after account deletion.** `DELETE /user/me` removes the user row but the JWT stays valid for up to 7 days. The `AuthGuard` validates the token signature and expiry only — it does not check the user still exists. Must be resolved before introducing `user_id` scoping on domain resources.

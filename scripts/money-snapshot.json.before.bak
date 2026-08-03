@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-07-30T00:26:34.993Z",
+  "mode": "before",
+  "accounts": {
+    "balance_sum": 8700,
+    "balance_row_count": 7,
+    "credit_limit_sum": 2000
+  },
+  "expenses": {
+    "amount_sum": 0,
+    "amount_row_count": 0
+  },
+  "incomes": {
+    "amount_sum": 900,
+    "amount_row_count": 3
+  }
+}
