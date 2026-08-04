@@ -41,7 +41,9 @@ RUN npm run build
 ##############################################
 FROM node:22-alpine AS production
 
-RUN apk add --no-cache openssl
+# curl es para el healthcheck de Coolify (docker exec ... curl http://localhost:3000/health).
+# El wget de BusyBox que trae Alpine por defecto no basta para lo que Coolify ejecuta.
+RUN apk add --no-cache openssl curl
 
 ENV NODE_ENV=production
 
