@@ -70,7 +70,10 @@ describe('TaxPaymentsService', () => {
         id: 1,
         is_active: true,
       });
-      prisma.taxPayment.create.mockResolvedValue({ ...mockPayment, status: 'PENDING' });
+      prisma.taxPayment.create.mockResolvedValue({
+        ...mockPayment,
+        status: 'PENDING',
+      });
 
       const result = await service.create(ctx, {
         type: 'IVA',
@@ -156,9 +159,7 @@ describe('TaxPaymentsService', () => {
         status: 'PAID',
       });
 
-      await expect(service.pay(ctx, 1, {})).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(service.pay(ctx, 1, {})).rejects.toThrow(ConflictException);
     });
 
     it('should fallback to existing account_id', async () => {
@@ -195,7 +196,9 @@ describe('TaxPaymentsService', () => {
       prisma.taxPayment.delete.mockResolvedValue({});
 
       await service.remove(ctx, 1);
-      expect(prisma.taxPayment.delete).toHaveBeenCalledWith({ where: { id: 1 } });
+      expect(prisma.taxPayment.delete).toHaveBeenCalledWith({
+        where: { id: 1 },
+      });
     });
   });
 

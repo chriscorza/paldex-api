@@ -467,9 +467,9 @@ describe('AccountsService', () => {
       prisma.expense.count.mockResolvedValue(3);
       prisma.income.count.mockResolvedValue(0);
 
-      await expect(
-        service.update(ctx, 1, { currency: 'USD' }),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.update(ctx, 1, { currency: 'USD' })).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should reject non-MXN currency on update', async () => {
@@ -480,9 +480,9 @@ describe('AccountsService', () => {
       prisma.expense.count.mockResolvedValue(0);
       prisma.income.count.mockResolvedValue(0);
 
-      await expect(
-        service.update(ctx, 1, { currency: 'EUR' }),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.update(ctx, 1, { currency: 'EUR' })).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 });

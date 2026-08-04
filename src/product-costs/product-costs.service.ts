@@ -174,11 +174,16 @@ export class ProductCostsService {
   }
 
   async getMissing(ctx: OwnershipContext, startDate: string, endDate: string) {
+    const ownerFilter = buildOwnerFilter(ctx) as { user_id?: number };
+
     const lines = await this.prisma.shopifyLineItem.findMany({
       where: {
         unit_cost: null,
         shopify_order: {
           created_at: { gte: new Date(startDate), lte: new Date(endDate) },
+          ...(ownerFilter.user_id
+            ? { shopify_connection: { user_id: ownerFilter.user_id } }
+            : {}),
         },
       },
       select: {

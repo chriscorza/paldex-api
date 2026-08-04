@@ -123,6 +123,10 @@ export class TaxPaymentsService {
       await this.validateAccount(ctx, dto.account_id);
     }
 
+    if (dto.status === 'CANCELLED' && existing.status !== 'PAID') {
+      throw new BadRequestException('Only PAID tax payments can be cancelled');
+    }
+
     const updateData: any = {};
     if (dto.type !== undefined) updateData.type = dto.type;
     if (dto.tax_id !== undefined) updateData.tax_id = dto.tax_id;
@@ -135,6 +139,7 @@ export class TaxPaymentsService {
     if (dto.amount !== undefined) updateData.amount = dto.amount;
     if (dto.account_id !== undefined) updateData.account_id = dto.account_id;
     if (dto.notes !== undefined) updateData.notes = dto.notes;
+    if (dto.status !== undefined) updateData.status = dto.status;
 
     const payment = await this.prisma.taxPayment.update({
       where: { id },

@@ -27,11 +27,21 @@ export function calculatePayDates(
     case 'WEEKLY':
       return calculateWeekly(config.weekly_day!, rangeStart, rangeEnd);
     case 'BIWEEKLY':
-      return calculateBiweekly(config.biweekly_first_day!, config.biweekly_second_day!, rangeStart, rangeEnd);
+      return calculateBiweekly(
+        config.biweekly_first_day!,
+        config.biweekly_second_day!,
+        rangeStart,
+        rangeEnd,
+      );
     case 'MONTHLY':
       return calculateMonthly(config.monthly_day!, rangeStart, rangeEnd);
     case 'YEARLY':
-      return calculateYearly(config.yearly_month!, config.yearly_day!, rangeStart, rangeEnd);
+      return calculateYearly(
+        config.yearly_month!,
+        config.yearly_day!,
+        rangeStart,
+        rangeEnd,
+      );
     default:
       return [];
   }
@@ -55,7 +65,11 @@ export function calculateDueDates(
   }));
 }
 
-function calculateWeekly(payDayOfWeek: number, rangeStart: Date, rangeEnd: Date): PayrollPeriod[] {
+function calculateWeekly(
+  payDayOfWeek: number,
+  rangeStart: Date,
+  rangeEnd: Date,
+): PayrollPeriod[] {
   const periods: PayrollPeriod[] = [];
   const current = new Date(rangeStart);
   current.setHours(0, 0, 0, 0);
@@ -72,14 +86,23 @@ function calculateWeekly(payDayOfWeek: number, rangeStart: Date, rangeEnd: Date)
     const periodStart = new Date(payDate);
     periodStart.setDate(periodStart.getDate() - 6);
 
-    periods.push({ period_start: periodStart, period_end: periodEnd, scheduled_pay_date: payDate });
+    periods.push({
+      period_start: periodStart,
+      period_end: periodEnd,
+      scheduled_pay_date: payDate,
+    });
     current.setDate(payDate.getDate() + 1);
   }
 
   return periods;
 }
 
-function calculateBiweekly(firstDay: number, secondDay: number, rangeStart: Date, rangeEnd: Date): PayrollPeriod[] {
+function calculateBiweekly(
+  firstDay: number,
+  secondDay: number,
+  rangeStart: Date,
+  rangeEnd: Date,
+): PayrollPeriod[] {
   const periods: PayrollPeriod[] = [];
   const startMonth = rangeStart.getMonth();
   const startYear = rangeStart.getFullYear();
@@ -95,7 +118,11 @@ function calculateBiweekly(firstDay: number, secondDay: number, rangeStart: Date
         if (payDate < rangeStart || payDate > rangeEnd) continue;
         const periodStart = new Date(payDate);
         periodStart.setDate(periodStart.getDate() - 14);
-        periods.push({ period_start: periodStart, period_end: payDate, scheduled_pay_date: payDate });
+        periods.push({
+          period_start: periodStart,
+          period_end: payDate,
+          scheduled_pay_date: payDate,
+        });
       }
     }
   }
@@ -103,7 +130,11 @@ function calculateBiweekly(firstDay: number, secondDay: number, rangeStart: Date
   return periods;
 }
 
-function calculateMonthly(monthlyDay: number, rangeStart: Date, rangeEnd: Date): PayrollPeriod[] {
+function calculateMonthly(
+  monthlyDay: number,
+  rangeStart: Date,
+  rangeEnd: Date,
+): PayrollPeriod[] {
   const periods: PayrollPeriod[] = [];
   const startMonth = rangeStart.getMonth();
   const startYear = rangeStart.getFullYear();
@@ -118,14 +149,23 @@ function calculateMonthly(monthlyDay: number, rangeStart: Date, rangeEnd: Date):
       if (payDate < rangeStart || payDate > rangeEnd) continue;
       const periodStart = new Date(payDate);
       periodStart.setMonth(periodStart.getMonth() - 1);
-      periods.push({ period_start: periodStart, period_end: payDate, scheduled_pay_date: payDate });
+      periods.push({
+        period_start: periodStart,
+        period_end: payDate,
+        scheduled_pay_date: payDate,
+      });
     }
   }
 
   return periods;
 }
 
-function calculateYearly(month: number, day: number, rangeStart: Date, rangeEnd: Date): PayrollPeriod[] {
+function calculateYearly(
+  month: number,
+  day: number,
+  rangeStart: Date,
+  rangeEnd: Date,
+): PayrollPeriod[] {
   const periods: PayrollPeriod[] = [];
   const startYear = rangeStart.getFullYear();
   const endYear = rangeEnd.getFullYear();
@@ -135,7 +175,11 @@ function calculateYearly(month: number, day: number, rangeStart: Date, rangeEnd:
     if (payDate < rangeStart || payDate > rangeEnd) continue;
     const periodStart = new Date(payDate);
     periodStart.setFullYear(periodStart.getFullYear() - 1);
-    periods.push({ period_start: periodStart, period_end: payDate, scheduled_pay_date: payDate });
+    periods.push({
+      period_start: periodStart,
+      period_end: payDate,
+      scheduled_pay_date: payDate,
+    });
   }
 
   return periods;

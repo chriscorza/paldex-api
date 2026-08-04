@@ -49,10 +49,7 @@ describe('PayrollService', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        PayrollService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [PayrollService, { provide: PrismaService, useValue: prisma }],
     }).compile();
 
     service = module.get<PayrollService>(PayrollService);
@@ -193,9 +190,9 @@ describe('PayrollService', () => {
         status: 'PAID',
       });
 
-      await expect(
-        service.update(1, { deductions: 1000 }),
-      ).rejects.toThrow(ConflictException);
+      await expect(service.update(1, { deductions: 1000 })).rejects.toThrow(
+        ConflictException,
+      );
     });
 
     it('should validate state transitions', async () => {
@@ -215,16 +212,16 @@ describe('PayrollService', () => {
         status: 'PAID',
       });
 
-      await expect(
-        service.update(1, { status: 'PENDING' }),
-      ).rejects.toThrow(ConflictException);
+      await expect(service.update(1, { status: 'PENDING' })).rejects.toThrow(
+        ConflictException,
+      );
     });
 
     it('should throw 404 for non-existent payment', async () => {
       prisma.payrollPayment.findUnique.mockResolvedValue(null);
-      await expect(
-        service.update(9999, { deductions: 100 }),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.update(9999, { deductions: 100 })).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

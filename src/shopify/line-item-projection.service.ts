@@ -5,7 +5,7 @@ import { resolveLineItemCost } from './cost-resolver';
 import { Prisma as PrismaClient } from '@prisma/client';
 const Decimal = PrismaClient.Decimal;
 type Decimal = PrismaClient.Decimal;
-import { OwnershipContext } from '../common/ownership';
+import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
 
 @Injectable()
 export class LineItemProjectionService {
@@ -193,9 +193,14 @@ export class LineItemProjectionService {
     endDate: string,
     ctx?: OwnershipContext,
   ) {
+    const ownerFilter = buildOwnerFilter(ctx) as { user_id?: number };
+
     const orders = await this.prisma.shopifyOrder.findMany({
       where: {
         created_at: { gte: new Date(startDate), lte: new Date(endDate) },
+        ...(ownerFilter.user_id
+          ? { shopify_connection: { user_id: ownerFilter.user_id } }
+          : {}),
       },
       select: { id: true },
     });

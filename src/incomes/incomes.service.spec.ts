@@ -354,9 +354,9 @@ describe('IncomesService', () => {
     it('should throw NotFoundException if income does not exist', async () => {
       prisma.income.findFirst.mockResolvedValue(null);
 
-      await expect(
-        service.update(ctx, 9999, { amount: 2000 }),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.update(ctx, 9999, { amount: 2000 })).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should replace taxes when tax_ids is provided', async () => {

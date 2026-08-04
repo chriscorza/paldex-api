@@ -105,6 +105,11 @@ export class UpdateTaxPaymentDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({ enum: ['CANCELLED'] })
+  @IsOptional()
+  @IsEnum(['CANCELLED'])
+  status?: 'CANCELLED';
 }
 
 export class FilterTaxPaymentsDto {

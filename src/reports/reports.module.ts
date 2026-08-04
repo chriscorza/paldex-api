@@ -10,7 +10,18 @@ import { LineItemProjectionService } from '../shopify/line-item-projection.servi
 @Module({
   imports: [PrismaModule],
   controllers: [ReportsController],
-  providers: [ReportsAggregationService, ProfitEngine, ShopifyProfitabilityService, ComparisonService, LineItemProjectionService],
-  exports: [ReportsAggregationService, ProfitEngine, ShopifyProfitabilityService, ComparisonService],
+  providers: [
+    ReportsAggregationService,
+    ProfitEngine,
+    ShopifyProfitabilityService,
+    ComparisonService,
+    LineItemProjectionService,
+  ],
+  exports: [
+    ReportsAggregationService,
+    ProfitEngine,
+    ShopifyProfitabilityService,
+    ComparisonService,
+  ],
 })
 export class ReportsModule {}

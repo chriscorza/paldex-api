@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ExpenseCategoriesService } from './expense-categories.service';
 import { PrismaService } from '../prisma.service';
-import { ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 
 const ctx = { userId: 1, scope: 'ANY' as const };
 
@@ -108,9 +112,9 @@ describe('ExpenseCategoriesService', () => {
         is_system: true,
       });
 
-      await expect(
-        service.update(ctx, 1, { name: 'Changed' }),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.update(ctx, 1, { name: 'Changed' })).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should allow update of custom categories', async () => {

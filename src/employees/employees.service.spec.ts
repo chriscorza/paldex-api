@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EmployeesService } from './employees.service';
 import { PrismaService } from '../prisma.service';
-import { BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 
 const ctx = { userId: 1, scope: 'ANY' as const };
 
@@ -204,7 +208,9 @@ describe('EmployeesService', () => {
 
     it('should throw NotFoundException', async () => {
       prisma.employee.findFirst.mockResolvedValue(null);
-      await expect(service.remove(ctx, 9999)).rejects.toThrow(NotFoundException);
+      await expect(service.remove(ctx, 9999)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

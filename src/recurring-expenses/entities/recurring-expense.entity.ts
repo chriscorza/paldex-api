@@ -26,9 +26,21 @@ export class RecurringExpenseEntity {
 }
 
 export const RECURRING_SELECT = {
-  id: true, concept: true, amount: true, category_id: true, account_id: true,
-  frequency: true, due_day_of_week: true, due_day_of_month: true,
-  second_due_day_of_month: true, start_date: true, end_date: true,
-  active: true, auto_generate: true, requires_confirmation: true,
-  notes: true, user_id: true, created_at: true,
+  id: true,
+  concept: true,
+  amount: true,
+  category_id: true,
+  account_id: true,
+  frequency: true,
+  due_day_of_week: true,
+  due_day_of_month: true,
+  second_due_day_of_month: true,
+  start_date: true,
+  end_date: true,
+  active: true,
+  auto_generate: true,
+  requires_confirmation: true,
+  notes: true,
+  user_id: true,
+  created_at: true,
 } as const;

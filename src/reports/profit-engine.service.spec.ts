@@ -151,9 +151,7 @@ describe('ProfitEngine', () => {
   });
 
   it('should return null projected profit when net profit is null', () => {
-    const report = engine.calculate(
-      makeAggregates({ pending_expenses: 100 }),
-    );
+    const report = engine.calculate(makeAggregates({ pending_expenses: 100 }));
 
     expect(report.projection.projected_net_profit).toBeNull();
   });

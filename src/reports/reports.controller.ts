@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Req, Post, Body } from '@nestjs/common';
+import { Controller, Get, Query, Req, Post, Body, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -11,6 +11,7 @@ import { MonthlyReportQueryDto } from './dto/report-query.dto';
 import { ShopifyReportQueryDto } from './dto/shopify-report-query.dto';
 import { BadRequestException } from '@nestjs/common';
 import { LineItemProjectionService } from '../shopify/line-item-projection.service';
+import { escapeCsvField } from '../common/csv';
 
 @ApiTags('Reports')
 @ApiBearerAuth()
@@ -161,10 +162,16 @@ export class ReportsController {
 
   @Post('shopify/recalculate-costs')
   async recalculateCosts(
+    @CurrentUser() user: { id: number },
+    @Req() request: any,
     @Query('start_date') startDate: string,
     @Query('end_date') endDate: string,
   ) {
-    return this.lineItemProjection.recalculateCosts(startDate, endDate);
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: (request as any).permissionScope || 'OWN',
+    };
+    return this.lineItemProjection.recalculateCosts(startDate, endDate, ctx);
   }
 
   @Get('compare')
@@ -173,11 +180,18 @@ export class ReportsController {
     @Req() request: any,
     @Query('periods') periods: string,
   ) {
-    const ctx: OwnershipContext = { userId: user.id, scope: (request as any).permissionScope || 'OWN' };
-    if (!periods) throw new BadRequestException('periods query param required (comma-separated YYYY-MM)');
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: (request as any).permissionScope || 'OWN',
+    };
+    if (!periods)
+      throw new BadRequestException(
+        'periods query param required (comma-separated YYYY-MM)',
+      );
     const parts = periods.split(',').map((p) => p.trim());
     const unique = [...new Set(parts)];
-    if (unique.length !== parts.length) throw new BadRequestException('Duplicate periods not allowed');
+    if (unique.length !== parts.length)
+      throw new BadRequestException('Duplicate periods not allowed');
     return this.comparisonService.compare(ctx, parts);
   }
 
@@ -187,7 +201,10 @@ export class ReportsController {
     @Req() request: any,
     @Query('months') monthsStr: string,
   ) {
-    const ctx: OwnershipContext = { userId: user.id, scope: (request as any).permissionScope || 'OWN' };
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: (request as any).permissionScope || 'OWN',
+    };
     const months = parseInt(monthsStr || '12', 10);
     return this.comparisonService.trends(ctx, months);
   }
@@ -196,19 +213,113 @@ export class ReportsController {
   async exportMonthly(
     @CurrentUser() user: { id: number },
     @Req() request: any,
+    @Res() res: any,
     @Query() query: MonthlyReportQueryDto,
     @Query('format') format: string,
   ) {
     if (format === 'pdf') {
-      throw new BadRequestException('PDF export not yet available. Use format=csv. See CLAUDE.md for details.');
+      throw new BadRequestException(
+        'PDF export not yet available. Use format=csv.',
+      );
     }
-    return this.exportMonthlyCsv(user, request, query);
+    if (format !== 'csv') {
+      return this.exportMonthlyCsv(user, request, query);
+    }
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: (request as any).permissionScope || 'OWN',
+    };
+    const { startDate, endDate } = this.resolveDateRange(query);
+    const aggregates = await this.aggregation.getMonthlyAggregates(
+      ctx,
+      startDate,
+      endDate,
+    );
+    const report = this.engine.calculate(aggregates);
+
+    const headers = [
+      'net_sales',
+      'gross_sales',
+      'discounts_total',
+      'fees_total',
+      'shipping_charged',
+      'shipping_cost',
+      'cogs',
+      'gross_profit',
+      'gross_margin',
+      'operating_expenses',
+      'payroll_paid',
+      'calculated_operating_expenses',
+      'operating_profit',
+      'operating_margin',
+      'taxes_paid',
+      'net_profit',
+      'net_margin',
+      'inventory_purchases',
+      'owner_withdrawals',
+      'reinvestment',
+      'debt_principal_paid',
+      'sales_without_cost',
+      'cost_data_coverage',
+      'gross_profit_confirmed',
+      'gross_profit_purchase_basis',
+      'incomplete_cost_data',
+      'pending_expenses',
+      'pending_payroll',
+      'pending_taxes',
+      'projected_net_profit',
+    ];
+
+    const row = headers.map((h) => {
+      if (h.startsWith('pending_') || h.startsWith('projected_')) {
+        const val = (report.projection as any)[h] ?? null;
+        return escapeCsvField(val);
+      }
+      if (
+        [
+          'sales_without_cost',
+          'cost_data_coverage',
+          'gross_profit_confirmed',
+          'gross_profit_purchase_basis',
+          'incomplete_cost_data',
+        ].includes(h)
+      ) {
+        const val = (report.quality as any)[h] ?? null;
+        return escapeCsvField(h === 'incomplete_cost_data' ? String(val) : val);
+      }
+      return escapeCsvField((report as any)[h]);
+    });
+
+    const csv = [headers.join(','), row.join(',')].join('\n');
+
+    const yearMonth =
+      query.year && query.month
+        ? `${query.year}-${String(query.month).padStart(2, '0')}`
+        : 'custom';
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="reporte-mensual-${yearMonth}.csv"`,
+    );
+    res.send(csv);
   }
 
-  private async exportMonthlyCsv(user: any, request: any, query: MonthlyReportQueryDto) {
-    const ctx: OwnershipContext = { userId: user.id, scope: (request as any).permissionScope || 'OWN' };
+  private async exportMonthlyCsv(
+    user: any,
+    request: any,
+    query: MonthlyReportQueryDto,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: (request as any).permissionScope || 'OWN',
+    };
     const { startDate, endDate } = this.resolveDateRange(query);
-    const aggregates = await this.aggregation.getMonthlyAggregates(ctx, startDate, endDate);
+    const aggregates = await this.aggregation.getMonthlyAggregates(
+      ctx,
+      startDate,
+      endDate,
+    );
     const report = this.engine.calculate(aggregates);
     return report;
   }

@@ -14,39 +14,100 @@ export class MonthlyCloseController {
 
   @Get()
   findAll(@CurrentUser() u: { id: number }, @Req() r: any, @Query() q: any) {
-    return this.service.findAll({ userId: u.id, scope: r.permissionScope || 'OWN' }, q);
+    return this.service.findAll(
+      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      q,
+    );
   }
 
   @Get(':year/:month')
-  findOne(@CurrentUser() u: { id: number }, @Req() r: any, @Param('year') year: string, @Param('month') month: string) {
-    return this.service.findOne({ userId: u.id, scope: r.permissionScope || 'OWN' }, parseInt(year), parseInt(month));
+  findOne(
+    @CurrentUser() u: { id: number },
+    @Req() r: any,
+    @Param('year') year: string,
+    @Param('month') month: string,
+  ) {
+    return this.service.findOne(
+      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      parseInt(year),
+      parseInt(month),
+    );
   }
 
   @Get(':year/:month/preflight')
-  preflight(@CurrentUser() u: { id: number }, @Req() r: any, @Param('year') year: string, @Param('month') month: string) {
-    return this.service.preflight({ userId: u.id, scope: r.permissionScope || 'OWN' }, parseInt(year), parseInt(month));
+  preflight(
+    @CurrentUser() u: { id: number },
+    @Req() r: any,
+    @Param('year') year: string,
+    @Param('month') month: string,
+  ) {
+    return this.service.preflight(
+      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      parseInt(year),
+      parseInt(month),
+    );
   }
 
   @Get(':year/:month/integrity')
-  integrity(@CurrentUser() u: { id: number }, @Req() r: any, @Param('year') year: string, @Param('month') month: string) {
-    return this.service.checkIntegrity({ userId: u.id, scope: r.permissionScope || 'OWN' }, parseInt(year), parseInt(month));
+  integrity(
+    @CurrentUser() u: { id: number },
+    @Req() r: any,
+    @Param('year') year: string,
+    @Param('month') month: string,
+  ) {
+    return this.service.checkIntegrity(
+      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      parseInt(year),
+      parseInt(month),
+    );
   }
 
   @Post(':year/:month/review')
   @RequirePermissions('monthly_close:update')
-  review(@CurrentUser() u: { id: number }, @Req() r: any, @Param('year') year: string, @Param('month') month: string) {
-    return this.service.review({ userId: u.id, scope: r.permissionScope || 'OWN' }, parseInt(year), parseInt(month));
+  review(
+    @CurrentUser() u: { id: number },
+    @Req() r: any,
+    @Param('year') year: string,
+    @Param('month') month: string,
+  ) {
+    return this.service.review(
+      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      parseInt(year),
+      parseInt(month),
+    );
   }
 
   @Post(':year/:month/close')
   @RequirePermissions('monthly_close:update')
-  close(@CurrentUser() u: { id: number }, @Req() r: any, @Param('year') year: string, @Param('month') month: string) {
-    return this.service.close({ userId: u.id, scope: r.permissionScope || 'OWN' }, parseInt(year), parseInt(month), u.id);
+  close(
+    @CurrentUser() u: { id: number },
+    @Req() r: any,
+    @Param('year') year: string,
+    @Param('month') month: string,
+  ) {
+    return this.service.close(
+      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      parseInt(year),
+      parseInt(month),
+      u.id,
+    );
   }
 
   @Post(':year/:month/reopen')
   @RequirePermissions('monthly_close:update')
-  reopen(@CurrentUser() u: { id: number }, @Req() r: any, @Param('year') year: string, @Param('month') month: string, @Body() body: { reason: string }) {
-    return this.service.reopen({ userId: u.id, scope: r.permissionScope || 'OWN' }, parseInt(year), parseInt(month), body.reason, u.id);
+  reopen(
+    @CurrentUser() u: { id: number },
+    @Req() r: any,
+    @Param('year') year: string,
+    @Param('month') month: string,
+    @Body() body: { reason: string },
+  ) {
+    return this.service.reopen(
+      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      parseInt(year),
+      parseInt(month),
+      body.reason,
+      u.id,
+    );
   }
 }

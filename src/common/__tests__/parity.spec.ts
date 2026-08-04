@@ -164,7 +164,11 @@ describe('Income-Expense Parity', () => {
   });
 
   it('should both handle taxes with same semantics', async () => {
-    prisma.account.findFirst.mockResolvedValue({ id: 1, is_active: true, user_id: 1 });
+    prisma.account.findFirst.mockResolvedValue({
+      id: 1,
+      is_active: true,
+      user_id: 1,
+    });
     prisma.tax.count.mockResolvedValue(2);
     prisma.income.create.mockResolvedValue(mockModel('income'));
     prisma.expense.create.mockResolvedValue(mockModel('expense'));

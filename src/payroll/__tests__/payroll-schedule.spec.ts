@@ -22,7 +22,9 @@ describe('calculatePayDates', () => {
       );
       expect(periods.length).toBeGreaterThanOrEqual(4);
       for (const p of periods) {
-        const diff = (p.period_end.getTime() - p.period_start.getTime()) / (1000 * 60 * 60 * 24);
+        const diff =
+          (p.period_end.getTime() - p.period_start.getTime()) /
+          (1000 * 60 * 60 * 24);
         expect(diff).toBe(6);
       }
     });
@@ -31,7 +33,11 @@ describe('calculatePayDates', () => {
   describe('BIWEEKLY', () => {
     it('should generate two dates per month', () => {
       const periods = calculatePayDates(
-        { frequency: 'BIWEEKLY', biweekly_first_day: 15, biweekly_second_day: 30 },
+        {
+          frequency: 'BIWEEKLY',
+          biweekly_first_day: 15,
+          biweekly_second_day: 30,
+        },
         new Date(2026, 0, 1),
         new Date(2026, 2, 31),
       );
@@ -40,7 +46,11 @@ describe('calculatePayDates', () => {
 
     it('should clamp day 31 in April to 30', () => {
       const periods = calculatePayDates(
-        { frequency: 'BIWEEKLY', biweekly_first_day: 15, biweekly_second_day: 31 },
+        {
+          frequency: 'BIWEEKLY',
+          biweekly_first_day: 15,
+          biweekly_second_day: 31,
+        },
         new Date(2026, 3, 1),
         new Date(2026, 3, 30),
       );
@@ -49,7 +59,11 @@ describe('calculatePayDates', () => {
 
     it('should clamp day 30 in February to 28', () => {
       const periods = calculatePayDates(
-        { frequency: 'BIWEEKLY', biweekly_first_day: 15, biweekly_second_day: 30 },
+        {
+          frequency: 'BIWEEKLY',
+          biweekly_first_day: 15,
+          biweekly_second_day: 30,
+        },
         new Date(2026, 1, 1),
         new Date(2026, 1, 28),
       );

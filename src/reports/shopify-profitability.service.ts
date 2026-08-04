@@ -100,7 +100,7 @@ export class ShopifyProfitabilityService {
     );
 
     const categories = Array.from(categoryMap.values()).map((c) => ({
-      category_name: c.category_name || 'Sin categoría',
+      category_name: c.category_name || 'uncategorized',
       category_source: c.category_name ? c.category_source : 'UNKNOWN',
       units_sold: c.units_sold,
       order_count: c.orderIds.size,
@@ -328,7 +328,7 @@ export class ShopifyProfitabilityService {
     >();
 
     for (const income of incomes) {
-      const key = income.channel || 'Sin canal';
+      const key = income.channel || 'no_channel';
       let ch = channelMap.get(key);
       if (!ch) {
         ch = {
@@ -351,7 +351,7 @@ export class ShopifyProfitabilityService {
     }
 
     const channels = Array.from(channelMap.values()).map((c) => ({
-      channel: c.channel ?? 'Sin canal',
+      channel: c.channel ?? 'no_channel',
       order_count: c.order_count,
       gross_sales: Math.round(c.gross_sales * 100) / 100,
       net_sales: Math.round(c.net_sales * 100) / 100,

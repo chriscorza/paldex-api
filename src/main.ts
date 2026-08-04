@@ -14,8 +14,15 @@ async function bootstrap() {
     }),
   );
   // 🔹 Habilitar CORS
+  // CORS_ORIGINS: lista separada por comas con los orígenes permitidos
+  // (ej. "https://paldex.corszas.com"). Si no está definida se permite todo,
+  // que es lo cómodo en desarrollo pero NO lo que quieres en producción.
+  const corsOrigins = process.env.CORS_ORIGINS?.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   app.enableCors({
-    origin: '*', // Permitir todas las fuentes
+    origin: corsOrigins?.length ? corsOrigins : '*',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     allowedHeaders: 'Content-Type, Authorization',
   });
@@ -36,6 +43,8 @@ async function bootstrap() {
     jsonDocumentUrl: 'api-docs/json',
   });
 
-  await app.listen(process.env.PORT ?? 3000);
+  // '0.0.0.0' es obligatorio dentro de un contenedor: si se escucha solo en
+  // localhost, el proxy de Coolify no puede alcanzar la app.
+  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
 bootstrap();

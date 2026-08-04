@@ -1,0 +1,27 @@
+node_modules
+dist
+coverage
+
+# Logs
+*.log
+npm-debug.log*
+
+# Entorno (las variables las inyecta Coolify, nunca la imagen)
+.env
+.env.*
+
+# Git y editores
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+
+# Docs y herramientas de desarrollo
+*.md
+openspec
+.claude
+test
+
+# Volcados de base de datos
+*.sql

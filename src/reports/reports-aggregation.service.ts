@@ -388,11 +388,15 @@ export class ReportsAggregationService {
               _sum: { amount: true },
             }),
             this.prisma.payrollPayment.aggregate({
-              where: { account_id: account.id, status: 'PAID' },
+              where: {
+                employee: { ...ownerFilter },
+                account_id: account.id,
+                status: 'PAID',
+              },
               _sum: { net_amount: true },
             }),
             this.prisma.taxPayment.aggregate({
-              where: { account_id: account.id, status: 'PAID' },
+              where: { ...ownerFilter, account_id: account.id, status: 'PAID' },
               _sum: { amount: true },
             }),
           ]);
@@ -420,11 +424,14 @@ export class ReportsAggregationService {
 
     const activeAccounts = result.filter((a) => a.is_active);
     const pendingPayrollAgg = await this.prisma.payrollPayment.aggregate({
-      where: { status: { in: ['PENDING', 'SCHEDULED'] } },
+      where: {
+        employee: { ...ownerFilter },
+        status: { in: ['PENDING', 'SCHEDULED'] },
+      },
       _sum: { net_amount: true },
     });
     const pendingTaxesAgg = await this.prisma.taxPayment.aggregate({
-      where: { status: 'PENDING' },
+      where: { ...ownerFilter, status: 'PENDING' },
       _sum: { amount: true },
     });
 

@@ -15,7 +15,9 @@ export class CloseGuard {
     });
 
     if (close && close.status === 'CLOSED') {
-      throw new ConflictException(`Cannot modify data in closed month ${year}-${String(month).padStart(2, '0')}`);
+      throw new ConflictException(
+        `Cannot modify data in closed month ${year}-${String(month).padStart(2, '0')}`,
+      );
     }
   }
 

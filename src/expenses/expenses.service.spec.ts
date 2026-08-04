@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ExpensesService } from './expenses.service';
 import { PrismaService } from '../prisma.service';
-import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 
 const mockExpense = {
   id: 1,
@@ -261,9 +265,9 @@ describe('ExpensesService', () => {
     it('should throw NotFoundException if not found', async () => {
       prisma.expense.findFirst.mockResolvedValue(null);
 
-      await expect(
-        service.update(ctx, 9999, { amount: 100 }),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.update(ctx, 9999, { amount: 100 })).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -416,7 +420,10 @@ describe('ExpensesService', () => {
       const pendingExpense = { ...mockExpense, status: 'PENDING' };
       prisma.expense.findFirst.mockResolvedValue(pendingExpense);
       prisma.account.findFirst.mockResolvedValue(mockAccount);
-      prisma.expense.update.mockResolvedValue({ ...mockExpense, status: 'PAID' });
+      prisma.expense.update.mockResolvedValue({
+        ...mockExpense,
+        status: 'PAID',
+      });
 
       const result = await service.pay(ctx, 1, {});
       expect(result.status).toBe('PAID');
@@ -442,9 +449,9 @@ describe('ExpensesService', () => {
         is_active: false,
       });
 
-      await expect(
-        service.pay(ctx, 1, { account_id: 2 }),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.pay(ctx, 1, { account_id: 2 })).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 

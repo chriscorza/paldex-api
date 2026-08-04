@@ -3,7 +3,9 @@ import { Prisma } from '@prisma/client';
 const Decimal = Prisma.Decimal;
 type Decimal = Prisma.Decimal;
 
-export function toMoneyNumber(d: Decimal | number | null | undefined): number | null {
+export function toMoneyNumber(
+  d: Decimal | number | null | undefined,
+): number | null {
   if (d === null || d === undefined) return null;
   if (d instanceof Decimal) return d.toNumber();
   if (typeof d === 'number') return d;

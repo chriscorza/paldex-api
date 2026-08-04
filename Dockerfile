@@ -1,23 +1,75 @@
-# Usa la última imagen base de Node.js 22 en Alpine para reducir el tamaño
-FROM node:22-alpine
+# syntax=docker/dockerfile:1
 
-# Establece el directorio de trabajo en el contenedor
+##############################################
+# Etapa 1 — development
+# Dependencias completas (incluye devDependencies).
+# La usa docker-compose para el modo watch local.
+##############################################
+FROM node:22-alpine AS development
+
 WORKDIR /app
 
-# Copia los archivos de package.json y package-lock.json
-COPY package*.json ./
+# openssl lo necesitan los engines de Prisma en Alpine
+RUN apk add --no-cache openssl
 
-# Instala las dependencias de la aplicación (incluye devDependencies: se usa en modo dev vía docker-compose)
-RUN npm install
+COPY package*.json prisma.config.ts ./
+COPY prisma ./prisma
 
-# # Copia el resto de los archivos de la aplicación al contenedor
-# COPY . .
+RUN npm ci
 
-# # Compila el proyecto TypeScript
-# RUN npm run build
+COPY . .
 
-# Expone el puerto 3000
+# prisma.config.ts exige DATABASE_URL para cargarse, aunque `generate` no se
+# conecte a nada. Se pasa inline (solo para este RUN) para que NO quede grabada
+# en la imagen: en runtime la real la inyecta Coolify.
+RUN DATABASE_URL="mysql://build:build@localhost:3306/build" npx prisma generate
+
+EXPOSE 3000
+CMD ["npm", "run", "start:dev"]
+
+##############################################
+# Etapa 2 — builder
+# Compila TypeScript a dist/.
+##############################################
+FROM development AS builder
+
+RUN npm run build
+
+##############################################
+# Etapa 3 — production (imagen final)
+# Solo dependencias de runtime + dist compilado.
+##############################################
+FROM node:22-alpine AS production
+
+RUN apk add --no-cache openssl
+
+ENV NODE_ENV=production
+
+COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+# Se cambia a usuario `node` ANTES de instalar dependencias. Hacerlo al final
+# con `chown -R` obligaría a Docker a duplicar toda la capa de node_modules,
+# y la imagen crecería más del doble.
+WORKDIR /app
+RUN chown node:node /app
+USER node
+
+COPY --chown=node:node package*.json prisma.config.ts ./
+COPY --chown=node:node prisma ./prisma
+
+# --omit=dev deja fuera nest-cli, jest, eslint, etc.
+# El CLI de prisma y dotenv están en "dependencies" a propósito:
+# hacen falta para `prisma migrate deploy` en el arranque del contenedor.
+RUN npm ci --omit=dev && npm cache clean --force
+
+# prisma.config.ts exige DATABASE_URL para cargarse, aunque `generate` no se
+# conecte a nada. Se pasa inline (solo para este RUN) para que NO quede grabada
+# en la imagen: en runtime la real la inyecta Coolify.
+RUN DATABASE_URL="mysql://build:build@localhost:3306/build" npx prisma generate
+
+COPY --from=builder --chown=node:node /app/dist ./dist
+
 EXPOSE 3000
 
-# Comando para iniciar la aplicación en modo producción
-CMD ["npm", "run", "start:dev"]
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["node", "dist/main"]
