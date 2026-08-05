@@ -9,6 +9,7 @@ import { AuthService } from './auth.service';
 import { Public } from './auth.decorator';
 import { UserService } from 'src/user/user.service';
 import { LoginDto } from './dto/login.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { CreateUserDto } from 'src/user/dto/create-user.dto';
 import { SafeUser } from 'src/user/entities/user.entity';
 
@@ -30,6 +31,20 @@ export class AuthController {
   @ApiOkResponse({ description: 'Token emitido correctamente' })
   async login(@Body() loginData: LoginDto): Promise<{ access_token: string }> {
     return this.authService.signIn(loginData.email, loginData.password);
+  }
+
+  @Public()
+  @Post('login/google')
+  @ApiOperation({
+    summary: 'Iniciar sesión con Google',
+    description:
+      'Verifica el ID token de Google (firma y audiencia) con la librería oficial — nunca se confía en un token decodificado del lado del cliente. Crea el usuario si no existe (rol `user` por defecto) o lo actualiza si ya existía. Devuelve un JWT con el mismo shape que /auth/login.',
+  })
+  @ApiOkResponse({ description: 'Token emitido correctamente' })
+  async googleLogin(
+    @Body() googleLoginData: GoogleLoginDto,
+  ): Promise<{ access_token: string }> {
+    return this.authService.googleLogin(googleLoginData.credential);
   }
 
   @Public()

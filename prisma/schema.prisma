@@ -19,7 +19,7 @@ model User {
   password String?
   name    String?
   photo_url String?
-  google_token_id String?
+  google_token_id String?  @unique
   locale String @db.VarChar(3) @default("es")
   created_at DateTime @default(now())
   role_id Int?
