@@ -3,11 +3,14 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma.service';
 import { encryptAccessToken, decryptAccessToken } from './crypto';
 import { InstallShopifyDto } from './dto/install-shopify.dto';
+import { UpdateGatewayAccountsDto } from './dto/update-gateway-accounts.dto';
+import { ShopifyBackfillService } from './shopify-backfill.service';
 
 @Injectable()
 export class ShopifyConnectionService {
@@ -16,6 +19,7 @@ export class ShopifyConnectionService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private backfillService: ShopifyBackfillService,
   ) {}
 
   async install(
@@ -167,6 +171,27 @@ export class ShopifyConnectionService {
         )
         .catch(() => {});
 
+      const callbackUrl =
+        process.env.SHOPIFY_CALLBACK_URL ||
+        'http://localhost:3000/shopify/oauth/callback';
+      const webhookBaseUrl = callbackUrl.replace(
+        '/shopify/oauth/callback',
+        '',
+      );
+
+      const conn = await this.prisma.shopifyConnection.findUnique({
+        where: { shop_domain: shop },
+        select: { id: true },
+      });
+
+      if (conn) {
+        this.backfillService
+          .registerWebhooksAndBackfill(conn.id, `${webhookBaseUrl}/shopify/webhooks`)
+          .catch((err) => {
+            console.error('Failed to setup webhooks/backfill:', err);
+          });
+      }
+
       return { success: true };
     } catch {
       return { success: false, errorCode: 'unknown' };
@@ -226,5 +251,118 @@ export class ShopifyConnectionService {
         data: { status: 'REVOKED', access_token: '' },
       });
     }
+  }
+
+  async getGatewayAccounts(userId: number, connectionId: number) {
+    await this.verifyConnectionOwnership(userId, connectionId);
+
+    const [saved, seenGateways] = await Promise.all([
+      this.prisma.shopifyGatewayAccount.findMany({
+        where: { shopify_connection_id: connectionId },
+        select: { gateway: true, account_id: true },
+        orderBy: { gateway: 'asc' },
+      }),
+      this.prisma.income.groupBy({
+        by: ['channel'],
+        where: {
+          source: 'shopify',
+          shopify_order: {
+            shopify_connection_id: connectionId,
+          },
+          channel: { not: null },
+        },
+      }),
+    ]);
+
+    return {
+      mappings: saved,
+      seen_gateways: seenGateways.map((g) => g.channel).filter(Boolean),
+    };
+  }
+
+  async updateGatewayAccounts(
+    userId: number,
+    connectionId: number,
+    dto: UpdateGatewayAccountsDto,
+  ) {
+    const conn = await this.verifyConnectionOwnership(userId, connectionId);
+
+    const gateways = dto.mappings.map((m) => m.gateway);
+    const uniqueGateways = new Set(gateways);
+    if (uniqueGateways.size !== gateways.length) {
+      throw new BadRequestException('Duplicate gateways are not allowed');
+    }
+
+    for (const m of dto.mappings) {
+      const account = await this.prisma.account.findFirst({
+        where: { id: m.account_id, user_id: conn.user_id },
+      });
+      if (!account) {
+        throw new BadRequestException(
+          `Account ${m.account_id} does not belong to the connection owner`,
+        );
+      }
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.shopifyGatewayAccount.deleteMany({
+        where: { shopify_connection_id: connectionId },
+      }),
+      ...dto.mappings.map((m) =>
+        this.prisma.shopifyGatewayAccount.create({
+          data: {
+            shopify_connection_id: connectionId,
+            gateway: m.gateway,
+            account_id: m.account_id,
+          },
+        }),
+      ),
+    ]);
+
+    return this.getGatewayAccounts(userId, connectionId);
+  }
+
+  async resolveAccountForGateway(connectionId: number, gateway: string) {
+    const mapping = await this.prisma.shopifyGatewayAccount.findUnique({
+      where: {
+        shopify_connection_id_gateway: {
+          shopify_connection_id: connectionId,
+          gateway,
+        },
+      },
+      select: { account_id: true },
+    });
+
+    if (mapping) return mapping.account_id;
+
+    const conn = await this.prisma.shopifyConnection.findUnique({
+      where: { id: connectionId },
+      select: { account_id: true },
+    });
+
+    return conn?.account_id ?? null;
+  }
+
+  async verifyConnectionOwnership(
+    userId: number,
+    connectionId: number,
+  ) {
+    const conn = await this.prisma.shopifyConnection.findFirst({
+      where: { id: connectionId, user_id: userId },
+      select: { id: true, user_id: true },
+    });
+    if (!conn) {
+      throw new NotFoundException(
+        `Connection with id ${connectionId} not found`,
+      );
+    }
+    return conn;
+  }
+
+  async findActiveConnectionByDomain(shopDomain: string) {
+    return this.prisma.shopifyConnection.findUnique({
+      where: { shop_domain: shopDomain },
+      select: { id: true, status: true },
+    });
   }
 }

@@ -43,6 +43,8 @@ export const PERMISSION_CATALOG = [
   { resource: 'shopify_connection', action: 'read', scope: 'OWN' as const },
   { resource: 'shopify_connection', action: 'delete' },
   { resource: 'shopify_connection', action: 'delete', scope: 'OWN' as const },
+  { resource: 'shopify_connection', action: 'update' },
+  { resource: 'shopify_connection', action: 'update', scope: 'OWN' as const },
   { resource: 'expense_category', action: 'read' },
   { resource: 'expense_category', action: 'read', scope: 'OWN' as const },
   { resource: 'expense_category', action: 'create' },

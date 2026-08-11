@@ -27,8 +27,8 @@ model User {
   accounts          Account[]
   expenses          Expense[]
   incomes           Income[]
-  shopifyConnections ShopifyConnection[]
-  expenseCategories  ExpenseCategory[]
+  shopifyConnections        ShopifyConnection[]
+  expenseCategories         ExpenseCategory[]
   employees          Employee[]
   taxPayments        TaxPayment[]
   productCosts       ProductCost[]
@@ -130,9 +130,24 @@ model ShopifyConnection {
   user            User                    @relation(fields: [user_id], references: [id])
   account         Account                 @relation(fields: [account_id], references: [id])
   orders          ShopifyOrder[]
+  gateway_accounts ShopifyGatewayAccount[]
 
   @@index([user_id])
   @@map("shopify_connections")
+}
+
+model ShopifyGatewayAccount {
+  id                     Int              @id @default(autoincrement())
+  shopify_connection_id  Int
+  gateway                String
+  account_id             Int
+  created_at             DateTime         @default(now())
+
+  shopify_connection     ShopifyConnection @relation(fields: [shopify_connection_id], references: [id], onDelete: Cascade)
+  account                Account           @relation(fields: [account_id], references: [id])
+
+  @@unique([shopify_connection_id, gateway])
+  @@map("shopify_gateway_accounts")
 }
 
 model ShopifyOrder {
@@ -252,6 +267,7 @@ model Account {
   expenses        Expense[]
   incomes         Income[]
   shopifyConnections ShopifyConnection[]
+  shopifyGatewayAccounts ShopifyGatewayAccount[]
   employees       Employee[]
   payrollPayments PayrollPayment[]
   taxPayments     TaxPayment[]
