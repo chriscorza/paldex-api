@@ -11,8 +11,7 @@ Without both, the handler will return `403 Forbidden` with no hint why.
 
 ### Permission format: `resource:action`
 
-Resources: `income`, `expense`, `account`, `tax`, `user`, `role`, `permission`, `expense_category`, `cogs`, `employee`, `payroll`, `tax_payment`, `report`, `product_cost`, `product_category_override`, `recurring_expense`, `payable`, `receivable`, `monthly_close`
-Actions: `read`, `create`, `update`, `delete`
+See `src/permissions/permission-catalog.ts` for the current list of resources/actions (many resources also have an `OWN`-scoped variant).
 
 Special cases:
 - `user:assign_role` — used for `PATCH /user/:id/role`
@@ -54,24 +53,7 @@ it is never hand-written, so it cannot drift from what the API actually does.
   body/query use a real class (not an inline `{ foo: string }` type or a bare `Prisma.*Input`) —
   Swagger cannot introspect those.
 
-### Shopify OAuth flow (not a normal request/response — read this before wiring the frontend)
-
-1. Frontend calls `POST /shopify/connections/install` (normal `fetch`, JWT in `Authorization`) → gets `{ authorize_url }`.
-2. Frontend does a **full page navigation** to `authorize_url` (`window.location.href = ...`, not `fetch`). The user approves access inside Shopify.
-3. Shopify redirects the browser straight to `GET /shopify/oauth/callback` on **this API** — the frontend never calls this endpoint itself.
-4. This API redirects the browser again, this time to `SHOPIFY_FRONTEND_URL` (env var, defaults to `http://localhost:3002` in dev), with:
-   - Success: `?shopify=success&shop=<domain>`
-   - Error: `?shopify=error&reason=<code>` — `reason` is one of `invalid_state`, `missing_credentials`, `token_exchange_failed`, `unsupported_currency`, `unknown`
-5. The frontend needs a route that reads these query params on load and shows success/error accordingly.
-
-Only stores billing in **MXN** are accepted — `unsupported_currency` is the expected error for anything else.
-
-### Shopify env vars
-
-`SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_SCOPES` (`read_orders,read_inventory`),
-`SHOPIFY_CALLBACK_URL` (must match the Partner Dashboard redirect URI, points at this API),
-`SHOPIFY_FRONTEND_URL` (where the OAuth callback sends the browser back to),
-`SHOPIFY_TOKEN_ENCRYPTION_KEY` (32 bytes, hex-encoded — `openssl rand -hex 32`).
+Shopify integration (OAuth flow, env vars) is documented in `src/shopify/CLAUDE.md`.
 
 ## Money handling
 
@@ -95,3 +77,19 @@ Three rules prevent double-counting in financial reports:
 Set `ISR_ESTIMATE_PERCENTAGE` env var to a number (e.g., `30`) to enable ISR estimation.
 Without it, `GET /tax-payments/estimate` returns `isr_estimated: null`.
 The estimate is overridable per-request via `?isr_percentage=X`.
+
+## Common commands
+
+The app reads its env via `ConfigModule.forRoot({ envFilePath: '.env.prod' })` (see `src/app.module.ts`) — note this is `.env.prod`, not `.env`, even for local/dev runs. Required vars include `DATABASE_URL` (MySQL) and `JWT_SECRET`.
+
+## Architecture
+
+Auth model:
+- `AuthGuard` (`src/auth/auth.guard.ts`) is registered globally via `APP_GUARD` in `app.module.ts`, so **every route requires a valid JWT by default**.
+- Use the `@Public()` decorator (`src/auth/auth.decorator.ts`, backed by `IS_PUBLIC_KEY` in `src/globalConstants.ts`) on a controller or handler to opt out of auth.
+- `AuthService.signIn` compares the submitted password against `user.password` directly (no hashing) — this is scaffolding, not production-ready auth.
+- JWT payload is `{ id, email }`, verified/signed with `JWT_SECRET`, 7-day expiry.
+
+Other conventions:
+- `PrismaService` (`src/prisma.service.ts`) is a global-ish injectable wrapping `PrismaClient`; services take `PrismaService` in their constructor and call `this.prisma.<model>.findMany/create/...` directly rather than going through a repository layer.
+- Shared query-filter shape lives in `src/types.ts` (`FilteredInput`: date range, search, sort, pagination) — controllers accept this via `@Query()` and translate it into a Prisma `WhereInput`.
