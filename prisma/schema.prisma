@@ -36,8 +36,32 @@ model User {
   RecurringExpense   RecurringExpense[]
   Payable            Payable[]
   Receivable         Receivable[]
+  invitation         Invitation?         @relation("InvitationUser")
+  invitationsSent    Invitation[]        @relation("InvitationInvitedBy")
 
   @@map("users")
+}
+
+enum InvitationStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
+model Invitation {
+  id          Int               @id @default(autoincrement())
+  email       String            @unique
+  status      InvitationStatus  @default(PENDING)
+  user_id     Int?              @unique
+  invited_by  Int?
+  created_at  DateTime          @default(now())
+  accepted_at DateTime?
+  revoked_at  DateTime?
+
+  user        User?             @relation("InvitationUser", fields: [user_id], references: [id])
+  invitedBy   User?             @relation("InvitationInvitedBy", fields: [invited_by], references: [id])
+
+  @@map("invitations")
 }
 
 enum PermissionScope {

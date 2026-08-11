@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
+import { ForbiddenException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma.service';
 
@@ -26,6 +27,11 @@ describe('AuthService', () => {
       role: {
         findUnique: jest.fn(),
       },
+      invitation: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
+      $transaction: jest.fn((cb) => cb(prisma)),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -52,6 +58,10 @@ describe('AuthService', () => {
       email: 'test@test.com',
       password: 'secret',
     });
+    prisma.invitation.findUnique.mockResolvedValue({
+      id: 10,
+      status: 'ACTIVE',
+    });
 
     const result = await service.signIn('test@test.com', 'secret');
 
@@ -72,6 +82,31 @@ describe('AuthService', () => {
     });
 
     await expect(service.signIn('test@test.com', 'wrong')).rejects.toThrow();
+  });
+
+  it('should reject login when the invitation was revoked', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 1,
+      email: 'test@test.com',
+      password: 'secret',
+    });
+    prisma.invitation.findUnique.mockResolvedValue({
+      id: 10,
+      status: 'REVOKED',
+    });
+
+    await expect(service.signIn('test@test.com', 'secret')).rejects.toThrow();
+  });
+
+  it('should reject login when there is no invitation row at all', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 1,
+      email: 'test@test.com',
+      password: 'secret',
+    });
+    prisma.invitation.findUnique.mockResolvedValue(null);
+
+    await expect(service.signIn('test@test.com', 'secret')).rejects.toThrow();
   });
 
   it('should reject an unverified Google email', async () => {
@@ -110,10 +145,40 @@ describe('AuthService', () => {
       photo_url: 'http://pic',
       google_token_id: 'google-sub-1',
     });
+    prisma.invitation.findUnique.mockResolvedValue({
+      id: 10,
+      status: 'ACTIVE',
+    });
 
     const result = await service.googleLogin('credential');
 
     expect(result).toEqual({ access_token: 'token' });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('should reject Google login on an existing account with revoked access', async () => {
+    mockVerifyIdToken.mockResolvedValue({
+      getPayload: () => ({
+        email: 'test@test.com',
+        email_verified: true,
+        name: 'Test',
+        picture: 'http://pic',
+        sub: 'google-sub-1',
+      }),
+    });
+    prisma.user.findFirst.mockResolvedValue({
+      id: 1,
+      email: 'test@test.com',
+      name: 'Test',
+      photo_url: 'http://pic',
+      google_token_id: 'google-sub-1',
+    });
+    prisma.invitation.findUnique.mockResolvedValue({
+      id: 10,
+      status: 'REVOKED',
+    });
+
+    await expect(service.googleLogin('credential')).rejects.toThrow();
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
@@ -128,6 +193,10 @@ describe('AuthService', () => {
       }),
     });
     prisma.user.findFirst.mockResolvedValue(null);
+    prisma.invitation.findUnique.mockResolvedValue({
+      id: 20,
+      status: 'PENDING',
+    });
     prisma.role.findUnique.mockResolvedValue({ id: 5, name: 'user' });
     prisma.user.create.mockResolvedValue({
       id: 2,
@@ -149,5 +218,29 @@ describe('AuthService', () => {
         }),
       }),
     );
+    expect(prisma.invitation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 20 },
+        data: expect.objectContaining({ status: 'ACTIVE', user_id: 2 }),
+      }),
+    );
+  });
+
+  it('should reject first Google login when the email has no pending invitation', async () => {
+    mockVerifyIdToken.mockResolvedValue({
+      getPayload: () => ({
+        email: 'ghost@test.com',
+        email_verified: true,
+        name: 'Ghost',
+        sub: 'google-sub-3',
+      }),
+    });
+    prisma.user.findFirst.mockResolvedValue(null);
+    prisma.invitation.findUnique.mockResolvedValue(null);
+
+    await expect(service.googleLogin('credential')).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(prisma.user.create).not.toHaveBeenCalled();
   });
 });

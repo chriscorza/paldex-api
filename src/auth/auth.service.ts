@@ -1,6 +1,11 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { LoginTicket, OAuth2Client } from 'google-auth-library';
+import { InvitationStatus } from '@prisma/client';
 import { env } from 'process';
 import { PrismaService } from 'src/prisma.service';
 
@@ -36,6 +41,14 @@ export class AuthService {
     if (user?.password !== password) {
       throw new UnauthorizedException();
     }
+
+    const invitation = await this.prisma.invitation.findUnique({
+      where: { user_id: user.id },
+    });
+    if (!invitation || invitation.status === InvitationStatus.REVOKED) {
+      throw new UnauthorizedException();
+    }
+
     const payload = { id: user.id, email: user.email };
     return {
       access_token: await this.jwtService.signAsync(payload),
@@ -64,6 +77,13 @@ export class AuthService {
     });
 
     if (user) {
+      const invitation = await this.prisma.invitation.findUnique({
+        where: { user_id: user.id },
+      });
+      if (!invitation || invitation.status === InvitationStatus.REVOKED) {
+        throw new UnauthorizedException();
+      }
+
       const data: Record<string, string> = {};
       if (!user.name && name) data.name = name;
       if (!user.photo_url && picture) data.photo_url = picture;
@@ -76,18 +96,41 @@ export class AuthService {
         });
       }
     } else {
+      const invitation = await this.prisma.invitation.findUnique({
+        where: { email },
+      });
+      if (!invitation || invitation.status !== InvitationStatus.PENDING) {
+        throw new ForbiddenException(
+          'Este email no tiene una invitación pendiente',
+        );
+      }
+
       const defaultRole = await this.prisma.role.findUnique({
         where: { name: 'user' },
       });
-      user = await this.prisma.user.create({
-        data: {
-          email,
-          name,
-          photo_url: picture,
-          google_token_id: sub,
-          ...(defaultRole && { role: { connect: { id: defaultRole.id } } }),
-        },
-        select: GOOGLE_USER_SELECT,
+
+      user = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            email,
+            name,
+            photo_url: picture,
+            google_token_id: sub,
+            ...(defaultRole && { role: { connect: { id: defaultRole.id } } }),
+          },
+          select: GOOGLE_USER_SELECT,
+        });
+
+        await tx.invitation.update({
+          where: { id: invitation.id },
+          data: {
+            status: InvitationStatus.ACTIVE,
+            user_id: created.id,
+            accepted_at: new Date(),
+          },
+        });
+
+        return created;
       });
     }
 

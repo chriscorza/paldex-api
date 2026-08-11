@@ -25,6 +25,7 @@ import { RecurringExpensesModule } from './recurring-expenses/recurring-expenses
 import { PayablesModule } from './payables/payables.module';
 import { ReceivablesModule } from './receivables/receivables.module';
 import { MonthlyCloseModule } from './monthly-close/monthly-close.module';
+import { InvitationsModule } from './invitations/invitations.module';
 import { AdminBootstrapService } from './admin-bootstrap.service';
 import { DataSeedService } from './data-seed.service';
 import { PrismaModule } from './prisma.module';
@@ -55,6 +56,7 @@ import { PrismaModule } from './prisma.module';
     PayablesModule,
     ReceivablesModule,
     MonthlyCloseModule,
+    InvitationsModule,
   ],
   controllers: [AppController],
   providers: [

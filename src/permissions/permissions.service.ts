@@ -19,17 +19,21 @@ export class PermissionsService implements OnModuleInit {
   }
 
   async syncCatalog() {
+    const adminRole = await this.prisma.role.findUnique({
+      where: { name: 'admin' },
+    });
+
     for (const perm of PERMISSION_CATALOG) {
       const scope = 'scope' in perm ? perm.scope : 'ANY';
-      const existing = await this.prisma.permission.findFirst({
+      let permission = await this.prisma.permission.findFirst({
         where: {
           resource: perm.resource,
           action: perm.action,
           scope: scope as any,
         },
       });
-      if (!existing) {
-        await this.prisma.permission.create({
+      if (!permission) {
+        permission = await this.prisma.permission.create({
           data: {
             resource: perm.resource,
             action: perm.action,
@@ -39,6 +43,26 @@ export class PermissionsService implements OnModuleInit {
         this.logger.log(
           `Created permission: ${perm.resource}:${perm.action} (${scope})`,
         );
+      }
+
+      /*
+       * El rol admin es el superusuario del sistema: cualquier permiso del
+       * catálogo que le falte se le otorga automáticamente al arrancar, para
+       * que dar de alta un recurso nuevo no requiera un paso manual aparte
+       * en /roles. Ver design.md de invite-only-registration.
+       */
+      if (adminRole) {
+        const grant = await this.prisma.rolePermission.findFirst({
+          where: { role_id: adminRole.id, permission_id: permission.id },
+        });
+        if (!grant) {
+          await this.prisma.rolePermission.create({
+            data: { role_id: adminRole.id, permission_id: permission.id },
+          });
+          this.logger.log(
+            `Granted ${perm.resource}:${perm.action} (${scope}) to admin role`,
+          );
+        }
       }
     }
 

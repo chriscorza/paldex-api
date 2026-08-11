@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UserService } from './user.service';
 import { PrismaService } from '../prisma.service';
 import { PermissionsService } from '../permissions/permissions.service';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 
 const safeUser = {
   id: 1,
@@ -32,6 +36,11 @@ describe('UserService', () => {
       role: {
         findUnique: jest.fn(),
       },
+      invitation: {
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
+      $transaction: jest.fn((cb) => cb(prisma)),
     };
 
     permissionsService = {
@@ -142,6 +151,10 @@ describe('UserService', () => {
 
   describe('createUser', () => {
     it('should return safe user without password', async () => {
+      prisma.invitation.findUnique.mockResolvedValue({
+        id: 10,
+        status: 'PENDING',
+      });
       prisma.role.findUnique.mockResolvedValue(null);
       prisma.user.create.mockResolvedValue(safeUser);
 
@@ -154,6 +167,48 @@ describe('UserService', () => {
       expect(prisma.user.create).toHaveBeenCalledWith(
         expect.objectContaining({
           select: expect.any(Object),
+        }),
+      );
+    });
+
+    it('should reject registration without a pending invitation', async () => {
+      prisma.invitation.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.createUser({ email: 'ghost@test.com', password: 'secret' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject registration with a revoked invitation', async () => {
+      prisma.invitation.findUnique.mockResolvedValue({
+        id: 10,
+        status: 'REVOKED',
+      });
+
+      await expect(
+        service.createUser({ email: 'revoked@test.com', password: 'secret' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('should activate the invitation and link the new user', async () => {
+      prisma.invitation.findUnique.mockResolvedValue({
+        id: 10,
+        status: 'PENDING',
+      });
+      prisma.role.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue(safeUser);
+
+      await service.createUser({ email: 'new@test.com', password: 'secret' });
+
+      expect(prisma.invitation.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 10 },
+          data: expect.objectContaining({
+            status: 'ACTIVE',
+            user_id: safeUser.id,
+          }),
         }),
       );
     });

@@ -3,7 +3,9 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
+import { InvitationStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
 import { PermissionsService } from 'src/permissions/permissions.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -18,19 +20,42 @@ export class UserService {
   ) {}
 
   async createUser(dto: CreateUserDto): Promise<SafeUser> {
+    const invitation = await this.prisma.invitation.findUnique({
+      where: { email: dto.email },
+    });
+    if (!invitation || invitation.status !== InvitationStatus.PENDING) {
+      throw new ForbiddenException(
+        'Este email no tiene una invitación pendiente',
+      );
+    }
+
     const defaultRole = await this.prisma.role.findUnique({
       where: { name: 'user' },
     });
-    return this.prisma.user.create({
-      data: {
-        email: dto.email,
-        password: dto.password,
-        name: dto.name,
-        photo_url: dto.photo_url,
-        locale: dto.locale,
-        ...(defaultRole && { role: { connect: { id: defaultRole.id } } }),
-      },
-      select: USER_SELECT,
+
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: dto.email,
+          password: dto.password,
+          name: dto.name,
+          photo_url: dto.photo_url,
+          locale: dto.locale,
+          ...(defaultRole && { role: { connect: { id: defaultRole.id } } }),
+        },
+        select: USER_SELECT,
+      });
+
+      await tx.invitation.update({
+        where: { id: invitation.id },
+        data: {
+          status: InvitationStatus.ACTIVE,
+          user_id: user.id,
+          accepted_at: new Date(),
+        },
+      });
+
+      return user;
     });
   }
 

@@ -145,6 +145,9 @@ export const PERMISSION_CATALOG = [
   { resource: 'monthly_close', action: 'read', scope: 'OWN' as const },
   { resource: 'monthly_close', action: 'update' },
   { resource: 'monthly_close', action: 'update', scope: 'OWN' as const },
+  { resource: 'invitation', action: 'create' },
+  { resource: 'invitation', action: 'read' },
+  { resource: 'invitation', action: 'delete' },
 ] as const;
 
 export type PermissionString = (typeof PERMISSION_CATALOG)[number] extends {
