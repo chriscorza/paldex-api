@@ -76,6 +76,20 @@ Se introduce `ShopifyOrder`: un registro por pedido de Shopify, con el desglose 
 
 *Alternativa descartada:* añadir `cost`/`profit`/`discount` como columnas de `Income`. Se descarta porque un pedido con pago dividido tendría que repartir esos valores de forma arbitraria entre sus transacciones, y porque mezclaría el ledger de caja (income = dinero que entró, hecho) con una estimación analítica (ganancia = cálculo derivado, que puede recalcularse si el pedido se edita). Son necesidades de consistencia distintas: `Income` no se recalcula solo; `ShopifyOrder` sí, cada vez que el pedido cambia.
 
+### 2.1.b. El destino del income lo decide el gateway, no la conexión
+
+La versión inicial de este diseño fijaba una única cuenta por conexión. Se cambia: el `account_id` de cada income se resuelve desde el **gateway de su transacción**, con la cuenta de la conexión como valor por defecto para gateways sin mapear.
+
+El motivo es que la cuenta única rompe en cuanto una tienda cobra por más de un medio. Si el efectivo entra a una caja física y la tarjeta a un banco, ambos ingresos caen en la misma cuenta y su `computed_balance` pasa a ser la suma de dos sitios distintos — un número que no corresponde a ningún saldo real. Eso inutiliza el `drift` del reporte de caja (`reports-aggregation.service.ts`), cuya única razón de existir es poder cuadrar cada cuenta contra su fuente: un arqueo de caja o un estado de cuenta bancario.
+
+La decisión 2 (un income por transacción) ya deja el gateway disponible en cada movimiento, así que no hace falta pedirle nada nuevo a Shopify: es sólo cuestión de usar un dato que ya se tiene.
+
+**Modelo:** tabla `shopify_gateway_accounts` (`shopify_connection_id`, `gateway`, `account_id`), con único compuesto sobre `(shopify_connection_id, gateway)`.
+
+*Alternativa descartada:* una columna JSON en `shopify_connections`. Se descarta porque `account_id` es una clave foránea real —borrar una cuenta mapeada debe fallar o avisar, no dejar un identificador huérfano dentro de un JSON— y porque el conjunto de gateways es pequeño y consultable, justo lo que una tabla resuelve mejor.
+
+**Los mapeos no son retroactivos.** Cambiar la cuenta de un gateway afecta sólo a las transacciones nuevas; los incomes ya creados conservan el `account_id` con el que nacieron. Es coherente con la decisión 2.2 (lo sincronizado se congela) y evita que un cambio de configuración reescriba el histórico contable de forma silenciosa. La contrapartida es que corregir un mapeo mal puesto exige reasignar a mano los incomes afectados.
+
 ### 2.2. El costo se captura y se congela al sincronizar, nunca se recalcula después
 
 Como Shopify no guarda un histórico de costo por pedido (decisión de Context), la única opción es leer `InventoryItem.unitCost` en el momento en que el pedido llega a paldex, y almacenar ese valor de forma permanente en el `ShopifyOrder`. Un cambio de costo posterior en el catálogo de Shopify no debe alterar pedidos ya sincronizados.
@@ -237,11 +251,18 @@ La reconciliación usa una consulta GraphQL corriente (no `bulkOperationRunQuery
 2. Nueva tabla `shopify_orders`: desglose por pedido, con `line_items` como JSON (decisión 2.8).
 3. Nuevas columnas en `incomes`: `source`, `external_transaction_id`, `external_reference`, `shopify_order_id` (FK nullable a `shopify_orders`), todas nullable — no rompe filas existentes, todas quedan a `null`.
 4. `@@unique([source, external_transaction_id])` sobre `incomes` — MySQL permite múltiples `NULL` en un índice único, así que no afecta a los incomes manuales.
+5. Nueva tabla `shopify_gateway_accounts` (`shopify_connection_id`, `gateway`, `account_id`) con único compuesto sobre `(shopify_connection_id, gateway)` — decisión 2.1.b. Sin backfill: las conexiones existentes se quedan sin mapeos y todo cae en su cuenta por defecto, que es exactamente el comportamiento anterior.
 
-**Infraestructura:**
-1. Registrar la app en el Partner Dashboard de Shopify (tipo custom-distributed, no listada en el App Store).
-2. Definir `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_TOKEN_ENCRYPTION_KEY`, `SHOPIFY_SCOPES` (incluyendo `read_orders` y `read_inventory`), y la URL pública de callback en `.env.prod`.
-3. Configurar los tres webhooks de cumplimiento en el Partner Dashboard, apuntando a los endpoints de este change.
+**Infraestructura** (hecho el 2026-08-11, salvo lo indicado):
+
+1. ~~Registrar la app en el Partner Dashboard~~ → **El Partner Dashboard ya no se usa para esto.** Desde el 1 de enero de 2026 las apps se crean en el **Dev Dashboard** (`dev.shopify.com/dashboard`), y el camino viejo de custom app desde el admin de la tienda está discontinuado. Cambia además dónde vive cada cosa: el Client ID y el secret están en *Settings*, mientras que los scopes y las URLs de redirección se configuran creando una versión en la pestaña *Versions*. La distribución se elige una sola vez y **no se puede cambiar después**: para una tienda propia corresponde *Custom distribution*.
+2. Variables cargadas en Coolify, todas de runtime: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_TOKEN_ENCRYPTION_KEY`, `SHOPIFY_SCOPES`, `SHOPIFY_CALLBACK_URL` y `SHOPIFY_FRONTEND_URL`. Las dos últimas faltaban en la lista original: sin `SHOPIFY_FRONTEND_URL` el callback devuelve el navegador a `localhost:3002`, y `SHOPIFY_CALLBACK_URL` debe coincidir carácter por carácter con la URL de redirección declarada en la versión de la app.
+3. `SHOPIFY_SCOPES` es `read_orders,read_products,read_inventory`. `read_products` no estaba en la lista original y hace falta: la resolución de categoría lee `productType`, `collections` y `tags`, que sin ese scope llegan vacíos y mandan todo a `UNKNOWN`.
+4. Los tres webhooks de cumplimiento **no se registran**: sólo son obligatorios para apps distribuidas por el App Store, y ésta es de distribución custom. Los endpoints existen igualmente. En el Dev Dashboard tampoco se configuran ya por interfaz — irían en `shopify.app.toml` vía Shopify CLI.
+5. **Pendiente:** aprobación de `read_all_orders`, solicitada y en espera. Sin ella el backfill sólo alcanza los últimos 60 días. Cuando la aprueben hay que añadir el scope, **reinstalar la app en la tienda** —los scopes se conceden al instalar, no al cambiarlos— y volver a correr el backfill, que es idempotente por transacción y no duplica lo ya sincronizado.
+6. Los webhooks de pedidos (`ORDER_TRANSACTIONS_CREATE`, `REFUNDS_CREATE`, `ORDERS_CREATE`, `ORDERS_UPDATED`) **no se registran hasta que sus handlers hagan algo**. Hoy son stubs que responden `200`: registrarlos antes haría que Shopify entregue eventos que se descartan en silencio, dando por sincronizado lo que no lo está.
+
+*Estado de la API reverificado el 2026-08-11*: `2026-07` sigue siendo la versión estable (`2026-10` está como release candidate) y los cuatro topics de webhook del diseño siguen existiendo con el mismo nombre.
 
 **Orden de despliegue:**
 1. Migración de esquema.
@@ -257,3 +278,6 @@ La reconciliación usa una consulta GraphQL corriente (no `bulkOperationRunQuery
 - Los reembolsos sin income de origen encontrado quedan "registrados para revisión" — ¿dónde vive esa revisión? Este change no define una pantalla ni un endpoint para consultarlos, sólo que se registran (por ejemplo, en el log de aplicación). Si el volumen de estos casos resulta no ser trivial, hará falta una cola de incidencias de sincronización visible para el usuario.
 - ¿Vale la pena registrar también `orders/cancelled` para marcar de alguna forma los pedidos cancelados, aunque el dinero no se mueva hasta que haya un reembolso explícito?
 - ¿En qué momento deja de ser prematuro normalizar `line_items` en su propia tabla? En cuanto se pida un reporte de rentabilidad por producto a través de pedidos, la respuesta es "ahora" (decisión 2.8).
+- ~~¿Debe el destino del income depender del gateway de pago, en vez de ser fijo por conexión?~~ **Resuelto el 2026-08-11**: sí. Ver decisión 2.1.b. Se resolvió antes de implementar la ingesta, que era la condición — con incomes ya sincronizados habría sido una migración de datos en vez de un cambio de configuración.
+- La pantalla para configurar el mapeo `gateway → cuenta` no entra aquí: este change declara el frontend fuera de alcance. El backend expone la configuración; la interfaz va en un change propio de `paldex-app`. Hasta que exista, el mapeo sólo es editable vía API.
+- ¿Qué hacer si se borra una cuenta que está mapeada a un gateway? La FK impide dejarla huérfana, pero falta decidir si el borrado se rechaza o si el mapeo cae al valor por defecto.

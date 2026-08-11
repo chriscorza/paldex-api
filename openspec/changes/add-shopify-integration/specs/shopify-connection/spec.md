@@ -4,7 +4,7 @@
 
 El sistema SHALL exponer `POST /shopify/connections/install`, protegido por `shopify_connection:create`, que recibe `shop_domain` y `account_id` y devuelve la URL de autorización de Shopify a la que el cliente debe redirigir al navegador.
 
-`shop_domain` MUST tener el formato `*.myshopify.com`. `account_id` MUST corresponder a una cuenta existente.
+`shop_domain` MUST tener el formato `*.myshopify.com`. `account_id` MUST corresponder a una cuenta existente, y pasa a ser la **cuenta por defecto** de la conexión: la que reciben las transacciones cuyo gateway no tenga un mapeo explícito.
 
 El sistema MUST generar un parámetro `state` firmado y de corta duración que identifique al usuario y a la cuenta elegida, para poder recuperarlos en el callback sin depender de una sesión de navegador.
 
@@ -86,6 +86,41 @@ El sistema SHALL cifrar el `access_token` de cada conexión antes de escribirlo 
 
 - **WHEN** el sistema necesita hacer una petición autenticada a la Admin API de una tienda conectada
 - **THEN** descifra el token en memoria para esa llamada y no lo persiste descifrado en ningún sitio
+
+### Requirement: Configurar el mapeo de gateway a cuenta
+
+El sistema SHALL permitir configurar, por conexión, a qué cuenta de paldex se imputan los ingresos de cada gateway de pago, de modo que el efectivo y la tarjeta puedan caer en cuentas distintas y cada una siga cuadrando contra su fuente real.
+
+El sistema SHALL exponer la lectura del mapeo bajo `shopify_connection:read` y su modificación bajo `shopify_connection:update`, ambos en scope `OWN`.
+
+Cada cuenta referida en el mapeo MUST pertenecer al usuario dueño de la conexión. Un gateway MUST aparecer como máximo una vez por conexión.
+
+El sistema SHALL ofrecer los gateways ya vistos en las transacciones sincronizadas de esa conexión, para que el usuario no tenga que adivinar cómo los nombra Shopify.
+
+#### Scenario: Definir el mapeo de un gateway
+
+- **WHEN** el dueño de una conexión mapea el gateway `cash` a una cuenta propia
+- **THEN** el mapeo queda guardado y las transacciones posteriores con ese gateway se imputan a esa cuenta
+
+#### Scenario: Cuenta de otro usuario
+
+- **WHEN** se intenta mapear un gateway a una cuenta que no pertenece al dueño de la conexión
+- **THEN** el sistema rechaza la operación y el mapeo no se modifica
+
+#### Scenario: Gateway duplicado
+
+- **WHEN** se intenta mapear dos veces el mismo gateway en una conexión
+- **THEN** el sistema rechaza la operación
+
+#### Scenario: Cambiar un mapeo no reasigna lo ya sincronizado
+
+- **WHEN** se cambia la cuenta de un gateway que ya generó incomes
+- **THEN** los incomes existentes conservan su `account_id` y sólo las transacciones nuevas usan la cuenta nueva
+
+#### Scenario: Sin el permiso de modificación
+
+- **WHEN** un usuario con `shopify_connection:read` pero sin `shopify_connection:update` intenta cambiar el mapeo
+- **THEN** el sistema responde `403 Forbidden`
 
 ### Requirement: Listar las conexiones propias
 

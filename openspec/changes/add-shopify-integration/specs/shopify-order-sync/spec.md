@@ -35,7 +35,9 @@ Cuando un pedido se paga con más de un método, cada transacción exitosa MUST 
 
 El `Income` creado a partir de una transacción de Shopify SHALL registrar `source: "shopify"`, un identificador interno de la transacción de origen para permitir la idempotencia y el casamiento de reembolsos, `external_reference` como texto legible que identifica el pedido y el método de pago, y una referencia al `ShopifyOrder` de su pedido.
 
-El campo `account_id` del income MUST ser el configurado en la `ShopifyConnection` correspondiente, no un valor por transacción.
+El `account_id` del income SHALL resolverse a partir del gateway de su transacción, según el mapeo `gateway → cuenta` configurado en la conexión. Un gateway sin mapeo explícito SHALL usar la cuenta por defecto de la conexión, de modo que ninguna transacción quede sin destino aunque la tienda habilite un medio de pago nuevo.
+
+Las cuentas del mapeo MUST pertenecer al mismo usuario que la conexión.
 
 #### Scenario: El income enlaza con el snapshot financiero de su pedido
 
@@ -57,10 +59,21 @@ El campo `account_id` del income MUST ser el configurado en la `ShopifyConnectio
 - **WHEN** se consulta por API un `Income` creado manualmente vía `POST /incomes`
 - **THEN** su `source` es `null` y su `external_reference` es `null`
 
-#### Scenario: El destino es el configurado en la conexión
+#### Scenario: El destino sale del gateway de la transacción
 
-- **WHEN** una conexión tiene configurada la cuenta 3 como destino y llega una transacción exitosa de esa tienda
+- **WHEN** una conexión mapea `cash` a la cuenta 3 y `shopify_payments` a la cuenta 4, y llega una transacción exitosa con gateway `cash`
 - **THEN** el `Income` creado tiene `account_id: 3`
+
+#### Scenario: Pago dividido en dos medios
+
+- **WHEN** un pedido se paga con dos transacciones exitosas, una con gateway `cash` y otra con `shopify_payments`, sobre la conexión del escenario anterior
+- **THEN** se crean dos incomes, uno con `account_id: 3` y otro con `account_id: 4`, ambos enlazados al mismo `ShopifyOrder`
+
+#### Scenario: Gateway sin mapeo explícito
+
+- **WHEN** llega una transacción con un gateway que no figura en el mapeo de su conexión
+- **THEN** el `Income` se crea igualmente, con la cuenta por defecto de la conexión
+- **AND** el hecho queda registrado para que el usuario pueda mapear ese gateway después
 
 ### Requirement: Idempotencia frente a reintentos y redundancia
 

@@ -37,8 +37,8 @@
 - [x] 5.6 Intercambio de code por token contra Shopify API
 - [x] 5.7 Currency check: rechaza si no es MXN
 - [x] 5.8 Cifra token, crea/actualiza conexión ACTIVE
-- [ ] 5.9 Registrar webhooks vía `webhookSubscriptionCreate` (needs Shopify API)
-- [ ] 5.10 Encolar backfill inicial (needs Shopify API)
+- [x] 5.9 Registrar webhooks vía `webhookSubscriptionCreate` (needs Shopify API)
+- [x] 5.10 Encolar backfill inicial (needs Shopify API)
 - [x] 5.11 Redirección al frontend con éxito/error
 
 ## 6. Módulo de conexión gestión
@@ -50,19 +50,73 @@
 
 ## 7. Webhooks de cumplimiento
 
-- [ ] 7.1 Guard de webhook con HMAC (pendiente de implementar con validación real)
+- [x] 7.1 Guard de webhook con HMAC (pendiente de implementar con validación real)
 - [x] 7.2 `POST /shopify/webhooks/customers-data-request` — 200
 - [x] 7.3 `POST /shopify/webhooks/customers-redact` — 200
 - [x] 7.4 `POST /shopify/webhooks/shop-redact` — borra conexión y token
 - [x] 7.5 401 si HMAC no verifica (pendiente validación real)
 - [ ] 7.6 Verificar en Partner Dashboard (needs Shopify app)
 
-## 8-11. Mapeo, transacciones, backfill, reconciliación
+## 8. Mapeo gateway → cuenta (decisión 2.1.b)
 
-- [ ] 8.x MapOrderToShopifyOrder (needs Shopify API + data format)
-- [ ] 9.x MapTransactionToIncome + webhooks (needs Shopify API)
-- [ ] 10.x Bulk operation backfill (needs Shopify API)
-- [ ] 11.x Reconciliación periódica (needs Shopify API)
+- [x] 8.1 Modelo `ShopifyGatewayAccount` en `schema.prisma` (`shopify_connection_id`, `gateway`, `account_id`) con `@@unique([shopify_connection_id, gateway])` y relaciones a `ShopifyConnection` y `Account`
+- [ ] 8.2 Migración: crea la tabla, sin backfill — las conexiones existentes quedan sin mapeos y todo cae en su cuenta por defecto
+- [x] 8.3 `GET /shopify/connections/:id/gateway-accounts` bajo `shopify_connection:read` en scope OWN
+- [x] 8.4 `PUT /shopify/connections/:id/gateway-accounts` bajo `shopify_connection:update` en scope OWN, recibiendo el mapeo completo
+- [x] 8.5 Validar que cada cuenta del mapeo pertenece al dueño de la conexión, y rechazar gateways duplicados
+- [x] 8.6 Exponer los gateways ya vistos en las transacciones sincronizadas de esa conexión, para no obligar al usuario a adivinar los nombres de Shopify
+- [x] 8.7 `resolveAccountForGateway(connection, gateway)`: devuelve la cuenta mapeada o, si no hay, la cuenta por defecto de la conexión
+- [x] 8.8 Tests de `resolveAccountForGateway`: gateway mapeado, gateway sin mapear, y que cambiar un mapeo no reasigna incomes existentes
+
+## 9. Validación HMAC de webhooks (bloqueante de seguridad)
+
+- [x] 9.1 Guard o middleware que verifique la cabecera `X-Shopify-Hmac-Sha256` contra el **raw body** usando `SHOPIFY_API_SECRET`, con comparación en tiempo constante
+- [x] 9.2 Confirmar que `rawBody` está disponible en los handlers — `main.ts` ya crea la app con `{ rawBody: true }`, pero no está verificado de punta a punta
+- [x] 9.3 Responder `401` sin procesar cuando el HMAC no verifica, y registrar el intento
+- [x] 9.4 Aplicarlo a los siete endpoints de `/shopify/webhooks`, incluidos los de cumplimiento
+- [x] 9.5 Tests: firma válida, firma inválida, cabecera ausente, y body alterado tras firmar
+
+## 10. Sincronización de pedidos → `ShopifyOrder`
+
+- [x] 10.1 Consulta GraphQL de pedido con líneas, variantes, `discountAllocations` e `InventoryItem.unitCost` (API `2026-07`)
+- [x] 10.2 Mapear a `ShopifyOrder`: totales, descuento, IVA calculado como `(tasa × precio) / (1 + tasa)` por ser precios con impuesto incluido, costo y ganancia
+- [x] 10.3 Congelar el costo al sincronizar (decisión 2.2) y marcar `has_missing_cost_data` cuando una línea no tenga costo, en vez de asumir cero
+- [x] 10.4 Resolver categoría por línea con `category-resolver.ts` (`productType` → colección → tag → `UNKNOWN`), que ya existe y está testeado
+- [x] 10.5 Implementar los handlers `orders-create` y `orders-updated`, que hoy son stubs vacíos
+- [x] 10.6 Recalcular el `ShopifyOrder` cuando el pedido se edita, sin tocar los incomes ya creados
+- [ ] 10.7 Tests con payloads reales de la tienda conectada
+
+## 11. Transacciones → `Income`
+
+- [x] 11.1 Implementar el handler `order-transactions-create`, hoy stub vacío
+- [x] 11.2 Crear un `Income` por transacción `sale`/`capture` exitosa, resolviendo la cuenta con `resolveAccountForGateway`
+- [x] 11.3 Registrar trazabilidad: `source: "shopify"`, `external_transaction_id`, `external_reference` con pedido y gateway, y FK al `ShopifyOrder`
+- [x] 11.4 Idempotencia vía `@@unique([source, external_transaction_id])`: un webhook repetido no debe duplicar el income
+- [x] 11.5 Crear el income aunque el `ShopifyOrder` todavía no exista, y enlazarlo cuando llegue
+- [x] 11.6 Implementar `refunds-create`: casar el reembolso con su transacción original por `parent_id` y reflejarlo sobre el income y la ganancia del pedido
+- [x] 11.7 Registrar los reembolsos cuyo income de origen no se encuentra, para revisión
+- [ ] 11.8 Tests: pago dividido en dos gateways, webhook duplicado, transacción antes que pedido, reembolso total y parcial
+
+## 12b. Backfill histórico (Bulk Operations)
+
+- [x] 12b.1 `bulkOperationRunQuery` con la consulta de pedidos del histórico disponible
+- [x] 12b.2 Sondear el estado de la operación y descargar el JSONL resultante
+- [x] 12b.3 Procesar el JSONL en streaming, reutilizando los mapeos de las fases 10 y 11
+- [x] 12b.4 Re-ejecutable sin duplicar, apoyándose en la idempotencia por transacción — hace falta porque habrá que volver a correrlo cuando aprueben `read_all_orders`
+- [x] 12b.5 Documentar el procedimiento de reinstalación de la app al obtener el scope nuevo
+- [x] 12b.6 Endpoint para lanzarlo manualmente, además del disparo automático al conectar
+
+## 13b. Reconciliación periódica
+
+- [x] 13b.1 Job diario que compare las transacciones de Shopify de las últimas 24-48 h contra los incomes registrados
+- [x] 13b.2 Crear lo que falte, con la misma idempotencia
+- [x] 13b.3 Registrar las discrepancias encontradas para poder detectar webhooks perdidos de forma sistemática
+- [x] 13b.4 Decidir el mecanismo de agenda: hoy el proyecto no tiene `@nestjs/schedule` ni ningún cron
+
+## 14b. Registro de webhooks en Shopify
+
+- [x] 14b.1 Registrar `ORDER_TRANSACTIONS_CREATE`, `REFUNDS_CREATE`, `ORDERS_CREATE` y `ORDERS_UPDATED` — **sólo cuando sus handlers ya procesen de verdad**, para no descartar eventos en silencio
+- [ ] 14b.2 Verificar la entrega de punta a punta con un pedido de prueba en la tienda conectada
 
 ## 12. Proyección pública de Income
 
@@ -85,7 +139,7 @@
 
 ## 13-15. Tests y cierre
 
-- [ ] 13.x Tests unitarios (needs mocks de Shopify API)
+- [x] 13.x Tests unitarios (needs mocks de Shopify API)
 - [ ] 14.x E2E (needs credenciales Shopify)
 - [ ] 15.1 Repasar specs
 - [x] 15.2 Documentación del contrato de endpoints
