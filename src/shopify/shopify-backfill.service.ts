@@ -57,8 +57,8 @@ export class ShopifyBackfillService {
         ) {
           edges {
             node {
-              admin_graphql_api_id
-              order_number
+              id
+              name
               total_price: totalPriceSet { shopMoney { amount } }
               total_discounts: totalDiscountsSet { shopMoney { amount } }
               total_tax: totalTaxSet { shopMoney { amount } }
@@ -119,8 +119,8 @@ export class ShopifyBackfillService {
         ) {
           edges {
             node {
-              admin_graphql_api_id
-              order_number
+              id
+              name
               total_price: totalPriceSet { shopMoney { amount } }
               total_discounts: totalDiscountsSet { shopMoney { amount } }
               total_tax: totalTaxSet { shopMoney { amount } }
@@ -233,8 +233,21 @@ export class ShopifyBackfillService {
     return { processed, errors };
   }
 
+  /*
+   * Normaliza un pedido del JSONL de la Bulk Operation a la misma forma que
+   * traen los webhooks, que es la que espera el resto de la sincronización.
+   *
+   * Los payloads de webhook de Shopify vienen con forma REST
+   * (`admin_graphql_api_id`, `order_number`), pero GraphQL no tiene esos
+   * campos: son `id` y `name`. Y `name` es el texto que se ve en el admin
+   * ("#1001"), no un número, así que hay que extraerle los dígitos para
+   * `ShopifyOrder.order_number`, que es un Int.
+   */
   private mapBulkOrderToPayload(raw: any): any {
-    if (!raw.id || !raw.order_number) return null;
+    if (!raw.id) return null;
+
+    const orderNumber = parseInt(String(raw.name ?? '').replace(/\D/g, ''), 10);
+    if (Number.isNaN(orderNumber)) return null;
 
     const lineItems = (raw.line_items || []).map((li: any) => ({
       id: li.id,
@@ -252,7 +265,7 @@ export class ShopifyBackfillService {
 
     return {
       admin_graphql_api_id: raw.id,
-      order_number: raw.order_number,
+      order_number: orderNumber,
       total_price: raw.total_price || '0',
       total_discounts: raw.total_discounts || '0',
       total_tax: raw.total_tax || '0',
