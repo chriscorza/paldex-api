@@ -5,6 +5,15 @@ import { ProfitEngine } from './profit-engine.service';
 import { OwnershipContext } from '../common/ownership';
 import { currentMonthInZone, monthRangeInZone } from '../common/timezone';
 
+const round2 = (value: number) => Math.round(value * 100) / 100;
+
+/*
+ * `null` cuando el mes anterior fue cero: no es que no haya variado, es que el
+ * porcentaje no significa nada. Quien lo pinta decide qué poner en su lugar.
+ */
+const percentChange = (current: number, previous: number): number | null =>
+  previous === 0 ? null : round2(((current - previous) / previous) * 100);
+
 @Injectable()
 export class ComparisonService {
   constructor(
@@ -105,6 +114,7 @@ export class ComparisonService {
     if (months < 2 || months > 36)
       throw new Error('Months must be between 2 and 36');
     const results = [];
+    let prev: { net_sales: number; net_profit: number } | null = null;
     const current = currentMonthInZone();
 
     for (let i = months - 1; i >= 0; i--) {
@@ -125,6 +135,7 @@ export class ComparisonService {
       if (snapshot?.status === 'CLOSED') {
         report = {
           net_sales: Number(snapshot.income_total),
+          cogs: Number(snapshot.cogs_total),
           gross_profit:
             Number(snapshot.income_total) - Number(snapshot.cogs_total),
           operating_profit:
@@ -161,6 +172,7 @@ export class ComparisonService {
         const r = this.engine.calculate(aggregates);
         report = {
           net_sales: r.net_sales,
+          cogs: r.cogs ?? 0,
           gross_profit: r.gross_profit ?? 0,
           operating_profit: r.operating_profit ?? 0,
           net_profit: r.net_profit ?? 0,
@@ -169,7 +181,23 @@ export class ComparisonService {
         };
       }
 
-      results.push({ period, ...report });
+      /*
+       * Variación contra el mes anterior de la serie, con los mismos nombres
+       * que usa `compare`. Se calcula aquí y no en el frontend porque el orden
+       * cronológico es de este lado: la tabla se pinta del mes actual hacia
+       * atrás y ahí «el anterior» ya no es la fila de arriba.
+       */
+      const variation = prev
+        ? {
+            net_sales_abs: round2(report.net_sales - prev.net_sales),
+            net_sales_pct: percentChange(report.net_sales, prev.net_sales),
+            net_profit_abs: round2(report.net_profit - prev.net_profit),
+            net_profit_pct: percentChange(report.net_profit, prev.net_profit),
+          }
+        : null;
+
+      results.push({ period, ...report, variation });
+      prev = report;
     }
 
     return { periods: results };
