@@ -499,6 +499,57 @@ describe('ShopifyConnectionService — gateway accounts', () => {
       expect(sizes).toEqual([500, 500, 200]);
     });
 
+    /*
+     * El caso que dejó al usuario a ciegas: un mapeo cuya clave no casa con el
+     * canal real produce cero cambios, igual que un mapeo ya aplicado. El
+     * desglose por canal es lo único que distingue «ya está bien» de «tu mapeo
+     * no está casando».
+     */
+    it('informa qué canales quedaron sin mapear aunque no mueva nada', async () => {
+      setup({
+        defaultAccount: 99,
+        mappings: [{ gateway: 'tarjetamercadopago', account_id: 7 }],
+        incomes: [
+          { id: 1, channel: 'tarjeta mercadopago', account_id: 99, date: new Date('2026-03-01') },
+          { id: 2, channel: 'tarjeta mercadopago', account_id: 99, date: new Date('2026-03-02') },
+          { id: 3, channel: 'cash', account_id: 99, date: new Date('2026-03-03') },
+        ],
+      });
+
+      const result = await service.reapplyGatewayMapping(10, 1, true);
+
+      expect(result.updated).toBe(0);
+      expect(result.channels).toEqual([
+        {
+          gateway: 'tarjeta mercadopago',
+          count: 2,
+          mapped: false,
+          target_account_id: 99,
+        },
+        { gateway: 'cash', count: 1, mapped: false, target_account_id: 99 },
+      ]);
+    });
+
+    it('marca como mapeados los canales que sí casan', async () => {
+      setup({
+        mappings: [{ gateway: 'tarjeta mercadopago', account_id: 7 }],
+        incomes: [
+          { id: 1, channel: 'Tarjeta MercadoPago', account_id: 99, date: new Date('2026-03-01') },
+        ],
+      });
+
+      const result = await service.reapplyGatewayMapping(10, 1, true);
+
+      expect(result.channels).toEqual([
+        {
+          gateway: 'tarjeta mercadopago',
+          count: 1,
+          mapped: true,
+          target_account_id: 7,
+        },
+      ]);
+    });
+
     it('no reasigna nada de una conexión que no es del usuario', async () => {
       setup({});
       prisma.shopifyConnection.findFirst.mockResolvedValue(null);

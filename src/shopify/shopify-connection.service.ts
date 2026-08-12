@@ -427,12 +427,42 @@ export class ShopifyConnectionService {
       string,
       { account_id: number; updated: number }
     >();
+    /*
+     * Radiografía de lo que el servidor ve, se mueva algo o no.
+     *
+     * Sin esto, un mapeo cuya clave no casa con el canal de los ingresos da
+     * exactamente el mismo resultado que un mapeo ya aplicado —cero cambios— y
+     * desde la pantalla no hay forma de distinguir un caso del otro. Con el
+     * desglose se ve de un vistazo qué gateway quedó sin mapear y cuántos
+     * ingresos arrastra.
+     */
+    const channels = new Map<
+      string,
+      {
+        gateway: string;
+        count: number;
+        mapped: boolean;
+        target_account_id: number | null;
+      }
+    >();
     let unchanged = 0;
     let skippedClosedMonth = 0;
 
     for (const income of incomes) {
       const gateway = normalizeGateway(income.channel);
       const target = byGateway.get(gateway) ?? conn.account_id;
+
+      const seen = channels.get(gateway);
+      if (seen) {
+        seen.count++;
+      } else {
+        channels.set(gateway, {
+          gateway,
+          count: 1,
+          mapped: byGateway.has(gateway),
+          target_account_id: target,
+        });
+      }
 
       if (target === income.account_id) {
         unchanged++;
@@ -481,6 +511,7 @@ export class ShopifyConnectionService {
       by_gateway: [...perGateway.entries()]
         .map(([gateway, stat]) => ({ gateway, ...stat }))
         .sort((a, b) => b.updated - a.updated),
+      channels: [...channels.values()].sort((a, b) => b.count - a.count),
     };
   }
 
