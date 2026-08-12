@@ -45,6 +45,25 @@ describe('RecurringExpensesService — carga de histórico', () => {
     service = module.get<RecurringExpensesService>(RecurringExpensesService);
   });
 
+  it('convierte las fechas de la plantilla antes de guardarla', async () => {
+    prisma.recurringExpense.create = jest.fn().mockResolvedValue({});
+
+    await service.create(ctx, {
+      concept: 'Renta local',
+      amount: 7281.9,
+      category_id: 2,
+      frequency: 'MONTHLY' as any,
+      due_day_of_month: 6,
+      start_date: '2025-05-06',
+      end_date: '2025-12-06',
+    });
+
+    const { data } = prisma.recurringExpense.create.mock.calls[0][0];
+    /* En cadena, Prisma responde «premature end of input» y devuelve un 500. */
+    expect(data.start_date).toBeInstanceOf(Date);
+    expect(data.end_date).toBeInstanceOf(Date);
+  });
+
   const rowsCreated = () =>
     prisma.expense.create.mock.calls.map((c: any[]) => c[0].data);
 

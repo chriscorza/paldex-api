@@ -67,7 +67,13 @@ export class RecurringExpensesService {
           due_day_of_week: dto.due_day_of_week ?? null,
           due_day_of_month: dto.due_day_of_month ?? null,
           second_due_day_of_month: dto.second_due_day_of_month ?? null,
-          start_date: dto.start_date ?? new Date().toISOString(),
+          /*
+           * Prisma quiere un DateTime, no la cadena del DTO: un `2025-05-06`
+           * a secas revienta con «premature end of input». `end_date` sí se
+           * convertía, `start_date` no, así que dar de alta una plantilla con
+           * fecha de inicio siempre fallaba con un 500.
+           */
+          start_date: dto.start_date ? new Date(dto.start_date) : new Date(),
           end_date: dto.end_date ? new Date(dto.end_date) : null,
           active: dto.active ?? true,
           auto_generate: dto.auto_generate ?? true,
@@ -88,7 +94,12 @@ export class RecurringExpensesService {
     await this.findOne(ctx, id);
     const data: any = {};
     for (const [k, v] of Object.entries(dto)) {
-      if (v !== undefined) data[k] = v;
+      if (v === undefined) continue;
+      /* Mismo motivo que en `create`: las fechas llegan como cadena. */
+      data[k] =
+        (k === 'start_date' || k === 'end_date') && v !== null
+          ? new Date(v as string)
+          : v;
     }
     return new RecurringExpenseEntity(
       await this.prisma.recurringExpense.update({
