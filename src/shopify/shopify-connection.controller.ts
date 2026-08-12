@@ -105,6 +105,23 @@ export class ShopifyConnectionController {
     return this.shopifyService.getGatewayAccounts(user.id, id);
   }
 
+  @Get('connections/:id/available-gateways')
+  @RequirePermissions('shopify_connection:read')
+  @ApiOperation({
+    summary: 'Descubrir los gateways que usa la tienda',
+    description:
+      'Consulta los últimos 100 pedidos en Shopify y devuelve los gateways distintos ' +
+      'con los que se ha cobrado, ordenados por frecuencia. Sirve para configurar el ' +
+      'mapeo antes de importar nada: los gateways vistos en ingresos ya sincronizados ' +
+      '(los que devuelve GET gateway-accounts) están vacíos hasta la primera importación.',
+  })
+  discoverGateways(
+    @CurrentUser() user: { id: number; email: string },
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.shopifyService.discoverGateways(user.id, id);
+  }
+
   @Put('connections/:id/gateway-accounts')
   @RequirePermissions('shopify_connection:update')
   @ApiOperation({

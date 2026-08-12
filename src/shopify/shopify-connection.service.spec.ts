@@ -3,11 +3,13 @@ import { ShopifyConnectionService } from './shopify-connection.service';
 import { PrismaService } from '../prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { ShopifyBackfillService } from './shopify-backfill.service';
+import { ShopifyGraphQLService } from './shopify-graphql.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('ShopifyConnectionService — gateway accounts', () => {
   let service: ShopifyConnectionService;
   let prisma: any;
+  let graphql: any;
 
   beforeEach(async () => {
     prisma = {
@@ -43,12 +45,15 @@ describe('ShopifyConnectionService — gateway accounts', () => {
       registerWebhooksAndBackfill: jest.fn(),
     };
 
+    graphql = { graphql: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ShopifyConnectionService,
         { provide: PrismaService, useValue: prisma },
         { provide: JwtService, useValue: mockJwtService },
         { provide: ShopifyBackfillService, useValue: mockBackfillService },
+        { provide: ShopifyGraphQLService, useValue: graphql },
       ],
     }).compile();
 
@@ -186,6 +191,111 @@ describe('ShopifyConnectionService — gateway accounts', () => {
       expect(prisma.shopifyGatewayAccount.deleteMany).toHaveBeenCalledWith({
         where: { shopify_connection_id: 1 },
       });
+    });
+  });
+
+  describe('discoverGateways', () => {
+    const ordersWith = (transactions: any[][]) => ({
+      orders: {
+        edges: transactions.map((t) => ({ node: { transactions: t } })),
+      },
+    });
+
+    beforeEach(() => {
+      prisma.shopifyConnection.findFirst.mockResolvedValue({
+        id: 1,
+        user_id: 10,
+      });
+    });
+
+    it('devuelve los gateways distintos con su etiqueta legible', async () => {
+      graphql.graphql.mockResolvedValue(
+        ordersWith([
+          [
+            {
+              kind: 'SALE',
+              status: 'SUCCESS',
+              gateway: 'cash',
+              formattedGateway: 'Efectivo',
+            },
+          ],
+        ]),
+      );
+
+      const result = await service.discoverGateways(10, 1);
+
+      expect(result.gateways).toEqual([
+        { gateway: 'cash', label: 'Efectivo', count: 1 },
+      ]);
+      expect(result.orders_sampled).toBe(1);
+    });
+
+    it('ordena por frecuencia, del más usado al menos', async () => {
+      graphql.graphql.mockResolvedValue(
+        ordersWith([
+          [{ kind: 'SALE', status: 'SUCCESS', gateway: 'cash' }],
+          [{ kind: 'SALE', status: 'SUCCESS', gateway: 'shopify_payments' }],
+          [{ kind: 'SALE', status: 'SUCCESS', gateway: 'shopify_payments' }],
+        ]),
+      );
+
+      const result = await service.discoverGateways(10, 1);
+
+      expect(result.gateways.map((g) => g.gateway)).toEqual([
+        'shopify_payments',
+        'cash',
+      ]);
+      expect(result.gateways[0].count).toBe(2);
+    });
+
+    /*
+     * La lista debe contener exactamente los gateways que van a generar
+     * ingresos: sugerir uno que la sincronización descarta sería mandar al
+     * usuario a mapear algo que nunca se va a usar.
+     */
+    it('descarta las transacciones que la sincronización no convierte en ingreso', async () => {
+      graphql.graphql.mockResolvedValue(
+        ordersWith([
+          [
+            { kind: 'AUTHORIZATION', status: 'SUCCESS', gateway: 'autorizado' },
+            { kind: 'SALE', status: 'FAILURE', gateway: 'fallido' },
+            { kind: 'REFUND', status: 'SUCCESS', gateway: 'devuelto' },
+            { kind: 'CAPTURE', status: 'SUCCESS', gateway: 'valido' },
+          ],
+        ]),
+      );
+
+      const result = await service.discoverGateways(10, 1);
+
+      expect(result.gateways.map((g) => g.gateway)).toEqual(['valido']);
+    });
+
+    it('cae al nombre técnico si Shopify no da etiqueta legible', async () => {
+      graphql.graphql.mockResolvedValue(
+        ordersWith([[{ kind: 'SALE', status: 'SUCCESS', gateway: 'manual' }]]),
+      );
+
+      const result = await service.discoverGateways(10, 1);
+
+      expect(result.gateways[0].label).toBe('manual');
+    });
+
+    it('devuelve una lista vacía si la tienda no tiene pedidos', async () => {
+      graphql.graphql.mockResolvedValue(ordersWith([]));
+
+      const result = await service.discoverGateways(10, 1);
+
+      expect(result.gateways).toEqual([]);
+      expect(result.orders_sampled).toBe(0);
+    });
+
+    it('no consulta Shopify si la conexión no es del usuario', async () => {
+      prisma.shopifyConnection.findFirst.mockResolvedValue(null);
+
+      await expect(service.discoverGateways(99, 1)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(graphql.graphql).not.toHaveBeenCalled();
     });
   });
 });

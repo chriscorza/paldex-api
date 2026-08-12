@@ -11,6 +11,7 @@ import { encryptAccessToken, decryptAccessToken } from './crypto';
 import { InstallShopifyDto } from './dto/install-shopify.dto';
 import { UpdateGatewayAccountsDto } from './dto/update-gateway-accounts.dto';
 import { ShopifyBackfillService } from './shopify-backfill.service';
+import { ShopifyGraphQLService } from './shopify-graphql.service';
 
 @Injectable()
 export class ShopifyConnectionService {
@@ -20,6 +21,7 @@ export class ShopifyConnectionService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private backfillService: ShopifyBackfillService,
+    private graphql: ShopifyGraphQLService,
   ) {}
 
   async install(
@@ -277,6 +279,75 @@ export class ShopifyConnectionService {
     return {
       mappings: saved,
       seen_gateways: seenGateways.map((g) => g.channel).filter(Boolean),
+    };
+  }
+
+  /*
+   * Los gateways que se pueden mapear salen de la propia tienda, no de la base
+   * de datos.
+   *
+   * `getGatewayAccounts` sólo sabe de gateways ya vistos en ingresos
+   * importados, así que antes de la primera importación no puede sugerir nada
+   * — y es justo entonces cuando hay que configurar el mapeo, porque los
+   * ingresos se quedan con la cuenta que tenían al crearse. Sin esto, la única
+   * salida es adivinar el nombre exacto del gateway.
+   *
+   * Se miran los últimos 100 pedidos: basta para ver los medios de pago en uso
+   * y es una sola llamada a Shopify. Se filtra igual que la sincronización
+   * (sale/capture con éxito) para que la lista contenga exactamente los
+   * gateways que van a generar ingresos, ni uno más.
+   */
+  async discoverGateways(userId: number, connectionId: number) {
+    await this.verifyConnectionOwnership(userId, connectionId);
+
+    const query = `
+      {
+        orders(first: 100, sortKey: CREATED_AT, reverse: true) {
+          edges {
+            node {
+              transactions {
+                kind
+                status
+                gateway
+                formattedGateway
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const data: any = await this.graphql.graphql(connectionId, query);
+    const edges: any[] = data?.orders?.edges ?? [];
+
+    const found = new Map<string, { gateway: string; label: string; count: number }>();
+
+    for (const edge of edges) {
+      for (const txn of edge?.node?.transactions ?? []) {
+        const kind = (txn?.kind || '').toLowerCase();
+        const status = (txn?.status || '').toLowerCase();
+        if (kind !== 'sale' && kind !== 'capture') continue;
+        if (status !== 'success') continue;
+
+        const gateway = txn?.gateway;
+        if (!gateway) continue;
+
+        const existing = found.get(gateway);
+        if (existing) {
+          existing.count++;
+        } else {
+          found.set(gateway, {
+            gateway,
+            label: txn?.formattedGateway || gateway,
+            count: 1,
+          });
+        }
+      }
+    }
+
+    return {
+      gateways: [...found.values()].sort((a, b) => b.count - a.count),
+      orders_sampled: edges.length,
     };
   }
 
