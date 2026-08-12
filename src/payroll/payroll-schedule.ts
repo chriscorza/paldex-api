@@ -116,7 +116,16 @@ function calculateWeekly(
       period_end: periodEnd,
       scheduled_pay_date: payDate,
     });
-    current.setDate(payDate.getDate() + 1);
+
+    /*
+     * Avanzar al día siguiente del pago, no al «día del mes del pago + 1»:
+     * `setDate` sólo cambia el día dentro del mes que ya tiene `current`, así
+     * que en cuanto un pago caía en el mes siguiente —el domingo 1 de febrero
+     * con `current` en enero— retrocedía al día 2 de enero y volvía a empezar.
+     * El bucle no terminaba nunca y la petición moría por timeout.
+     */
+    current.setTime(payDate.getTime());
+    current.setDate(current.getDate() + 1);
   }
 
   return periods;

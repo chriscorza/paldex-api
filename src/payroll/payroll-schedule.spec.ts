@@ -51,6 +51,41 @@ describe('calculatePayDates — el día pertenece a su mes', () => {
     );
   });
 
+  /*
+   * Cruzar el fin de mes colgaba el proceso: `setDate(payDate.getDate() + 1)`
+   * retrocedía `current` al principio del mes en curso y el bucle se repetía
+   * para siempre. La petición moría por timeout, no por error.
+   */
+  it('termina y no repite al cruzar el fin de mes', () => {
+    const domingos = calculatePayDates(
+      { frequency: 'WEEKLY', weekly_day: 7 },
+      new Date('2026-01-01T00:00:00Z'),
+      new Date('2026-04-30T23:59:59Z'),
+    );
+
+    const fechas = domingos.map((p) =>
+      p.scheduled_pay_date.toISOString().slice(0, 10),
+    );
+
+    expect(fechas).toHaveLength(17);
+    expect(new Set(fechas).size).toBe(17);
+    expect(fechas[0]).toBe('2026-01-04');
+    expect(fechas[fechas.length - 1]).toBe('2026-04-26');
+  });
+
+  it('todos los pagos semanales caen en el día pedido', () => {
+    const domingos = calculatePayDates(
+      { frequency: 'WEEKLY', weekly_day: 7 },
+      new Date('2026-01-01T00:00:00Z'),
+      new Date('2026-04-30T23:59:59Z'),
+    );
+
+    for (const periodo of domingos) {
+      /* 06:00Z es medianoche en CDMX; el día local sigue siendo domingo. */
+      expect(periodo.scheduled_pay_date.getUTCDay()).toBe(0);
+    }
+  });
+
   it('ancla igual los pagos quincenales', () => {
     const periodos = calculatePayDates(
       { frequency: 'BIWEEKLY', biweekly_first_day: 1, biweekly_second_day: 15 },
