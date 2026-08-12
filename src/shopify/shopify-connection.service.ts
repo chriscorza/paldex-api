@@ -292,17 +292,25 @@ export class ShopifyConnectionService {
    * ingresos se quedan con la cuenta que tenían al crearse. Sin esto, la única
    * salida es adivinar el nombre exacto del gateway.
    *
-   * Se miran los últimos 100 pedidos: basta para ver los medios de pago en uso
-   * y es una sola llamada a Shopify. Se filtra igual que la sincronización
-   * (sale/capture con éxito) para que la lista contenga exactamente los
-   * gateways que van a generar ingresos, ni uno más.
+   * Se miran los últimos 250 pedidos —el máximo que Shopify devuelve en una
+   * página— y no todo el histórico: paginar una tienda de miles de pedidos son
+   * decenas de llamadas para construir una lista de sugerencias.
+   *
+   * La muestra puede dejar fuera un gateway usado sólo en pedidos antiguos, y
+   * eso ya pasó con una muestra de 100: sus ingresos acabaron en la cuenta por
+   * defecto. Hoy tiene arreglo —`reapplyGatewayMapping` reasigna el histórico—
+   * y además `getGatewayAccounts` completa la lista con los gateways vistos en
+   * ingresos ya importados, que sí cubren todo.
+   *
+   * Se filtra igual que la sincronización (sale/capture con éxito) para que la
+   * lista contenga exactamente los gateways que van a generar ingresos.
    */
   async discoverGateways(userId: number, connectionId: number) {
     await this.verifyConnectionOwnership(userId, connectionId);
 
     const query = `
       {
-        orders(first: 100, sortKey: CREATED_AT, reverse: true) {
+        orders(first: 250, sortKey: CREATED_AT, reverse: true) {
           edges {
             node {
               transactions {
@@ -348,6 +356,119 @@ export class ShopifyConnectionService {
     return {
       gateways: [...found.values()].sort((a, b) => b.count - a.count),
       orders_sampled: edges.length,
+    };
+  }
+
+  /*
+   * Aplica el mapeo actual a los ingresos ya importados.
+   *
+   * El mapeo normalmente NO es retroactivo, y es una decisión deliberada: cada
+   * ingreso conserva la cuenta que tenía al crearse. Pero eso deja sin salida
+   * al caso en que el mapeo se configuró incompleto —un gateway que no estaba
+   * mapeado manda sus ingresos a la cuenta por defecto de la conexión— y
+   * corregirlo a mano son cientos de ediciones. Esto es la excepción, y por eso
+   * es una acción explícita del usuario y no un efecto secundario de guardar el
+   * mapeo.
+   *
+   * Con `dryRun` no escribe nada: devuelve el mismo resumen para que la
+   * pantalla pueda enseñar qué va a pasar antes de que se confirme.
+   *
+   * Los meses cerrados no se tocan. Sus cifras están congeladas y los reportes
+   * comparativos usan esa fotografía; moverles la cuenta por debajo cambiaría
+   * un pasado que el usuario dio por bueno. Se cuentan aparte y se informan.
+   */
+  async reapplyGatewayMapping(
+    userId: number,
+    connectionId: number,
+    dryRun = false,
+  ) {
+    await this.verifyConnectionOwnership(userId, connectionId);
+
+    const conn = await this.prisma.shopifyConnection.findUnique({
+      where: { id: connectionId },
+      select: { account_id: true },
+    });
+
+    if (!conn) {
+      throw new NotFoundException(
+        `Connection with id ${connectionId} not found`,
+      );
+    }
+
+    const [mappings, incomes, closedMonths] = await Promise.all([
+      this.prisma.shopifyGatewayAccount.findMany({
+        where: { shopify_connection_id: connectionId },
+        select: { gateway: true, account_id: true },
+      }),
+      this.prisma.income.findMany({
+        where: {
+          source: 'shopify',
+          shopify_order: { shopify_connection_id: connectionId },
+        },
+        select: { id: true, channel: true, account_id: true, date: true },
+      }),
+      this.prisma.monthlyClose.findMany({
+        where: { user_id: userId, status: 'CLOSED' },
+        select: { year: true, month: true },
+      }),
+    ]);
+
+    const byGateway = new Map(mappings.map((m) => [m.gateway, m.account_id]));
+    const closed = new Set(closedMonths.map((c) => `${c.year}-${c.month}`));
+
+    const pending = new Map<number, number[]>();
+    const perGateway = new Map<string, { account_id: number; updated: number }>();
+    let unchanged = 0;
+    let skippedClosedMonth = 0;
+
+    for (const income of incomes) {
+      const gateway = income.channel ?? '';
+      const target = byGateway.get(gateway) ?? conn.account_id;
+
+      if (target === income.account_id) {
+        unchanged++;
+        continue;
+      }
+
+      const date = new Date(income.date);
+      if (closed.has(`${date.getFullYear()}-${date.getMonth() + 1}`)) {
+        skippedClosedMonth++;
+        continue;
+      }
+
+      const ids = pending.get(target) ?? [];
+      ids.push(income.id);
+      pending.set(target, ids);
+
+      const stat = perGateway.get(gateway) ?? { account_id: target, updated: 0 };
+      stat.updated++;
+      perGateway.set(gateway, stat);
+    }
+
+    let updated = 0;
+    for (const [accountId, ids] of pending) {
+      updated += ids.length;
+
+      if (dryRun) continue;
+
+      /* Lotes para no armar un IN (...) de miles de identificadores. */
+      for (let i = 0; i < ids.length; i += 500) {
+        await this.prisma.income.updateMany({
+          where: { id: { in: ids.slice(i, i + 500) } },
+          data: { account_id: accountId },
+        });
+      }
+    }
+
+    return {
+      dry_run: dryRun,
+      considered: incomes.length,
+      updated,
+      unchanged,
+      skipped_closed_month: skippedClosedMonth,
+      by_gateway: [...perGateway.entries()]
+        .map(([gateway, stat]) => ({ gateway, ...stat }))
+        .sort((a, b) => b.updated - a.updated),
     };
   }
 

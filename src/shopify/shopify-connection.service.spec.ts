@@ -28,6 +28,11 @@ describe('ShopifyConnectionService — gateway accounts', () => {
       },
       income: {
         groupBy: jest.fn(),
+        findMany: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      monthlyClose: {
+        findMany: jest.fn(),
       },
       account: {
         findFirst: jest.fn(),
@@ -191,6 +196,163 @@ describe('ShopifyConnectionService — gateway accounts', () => {
       expect(prisma.shopifyGatewayAccount.deleteMany).toHaveBeenCalledWith({
         where: { shopify_connection_id: 1 },
       });
+    });
+  });
+
+  describe('reapplyGatewayMapping', () => {
+    const setup = (opts: {
+      defaultAccount?: number;
+      mappings?: { gateway: string; account_id: number }[];
+      incomes?: { id: number; channel: string | null; account_id: number; date: Date }[];
+      closed?: { year: number; month: number }[];
+    }) => {
+      prisma.shopifyConnection.findFirst.mockResolvedValue({ id: 1, user_id: 10 });
+      prisma.shopifyConnection.findUnique.mockResolvedValue({
+        account_id: opts.defaultAccount ?? 99,
+      });
+      prisma.shopifyGatewayAccount.findMany.mockResolvedValue(opts.mappings ?? []);
+      prisma.income.findMany.mockResolvedValue(opts.incomes ?? []);
+      prisma.monthlyClose.findMany.mockResolvedValue(opts.closed ?? []);
+      prisma.income.updateMany.mockResolvedValue({ count: 0 });
+    };
+
+    it('mueve los ingresos a la cuenta que dice el mapeo', async () => {
+      setup({
+        mappings: [{ gateway: 'cash', account_id: 7 }],
+        incomes: [
+          { id: 1, channel: 'cash', account_id: 99, date: new Date('2026-03-01') },
+          { id: 2, channel: 'cash', account_id: 99, date: new Date('2026-03-02') },
+        ],
+      });
+
+      const result = await service.reapplyGatewayMapping(10, 1);
+
+      expect(result.updated).toBe(2);
+      expect(prisma.income.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [1, 2] } },
+        data: { account_id: 7 },
+      });
+    });
+
+    /*
+     * Un gateway sin mapeo debe acabar en la cuenta por defecto, que es
+     * exactamente lo que hace resolveAccountForGateway al crear el ingreso.
+     * Si esto divergiera, reaplicar dejaría los datos en un estado que la
+     * sincronización nunca habría producido.
+     */
+    it('devuelve a la cuenta por defecto los gateways sin mapeo', async () => {
+      setup({
+        defaultAccount: 99,
+        mappings: [{ gateway: 'cash', account_id: 7 }],
+        incomes: [
+          { id: 3, channel: 'paypal', account_id: 7, date: new Date('2026-03-01') },
+        ],
+      });
+
+      const result = await service.reapplyGatewayMapping(10, 1);
+
+      expect(result.updated).toBe(1);
+      expect(prisma.income.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [3] } },
+        data: { account_id: 99 },
+      });
+    });
+
+    it('no toca los ingresos que ya están en su cuenta', async () => {
+      setup({
+        mappings: [{ gateway: 'cash', account_id: 7 }],
+        incomes: [
+          { id: 4, channel: 'cash', account_id: 7, date: new Date('2026-03-01') },
+        ],
+      });
+
+      const result = await service.reapplyGatewayMapping(10, 1);
+
+      expect(result).toMatchObject({ updated: 0, unchanged: 1 });
+      expect(prisma.income.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('respeta los meses cerrados y los cuenta aparte', async () => {
+      setup({
+        mappings: [{ gateway: 'cash', account_id: 7 }],
+        incomes: [
+          { id: 5, channel: 'cash', account_id: 99, date: new Date('2026-01-15') },
+          { id: 6, channel: 'cash', account_id: 99, date: new Date('2026-03-15') },
+        ],
+        closed: [{ year: 2026, month: 1 }],
+      });
+
+      const result = await service.reapplyGatewayMapping(10, 1);
+
+      expect(result).toMatchObject({ updated: 1, skipped_closed_month: 1 });
+      expect(prisma.income.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [6] } },
+        data: { account_id: 7 },
+      });
+    });
+
+    it('con dry_run informa lo mismo pero no escribe nada', async () => {
+      setup({
+        mappings: [{ gateway: 'cash', account_id: 7 }],
+        incomes: [
+          { id: 7, channel: 'cash', account_id: 99, date: new Date('2026-03-01') },
+        ],
+      });
+
+      const result = await service.reapplyGatewayMapping(10, 1, true);
+
+      expect(result).toMatchObject({ dry_run: true, updated: 1 });
+      expect(prisma.income.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('desglosa por gateway, del que más mueve al que menos', async () => {
+      setup({
+        mappings: [
+          { gateway: 'cash', account_id: 7 },
+          { gateway: 'paypal', account_id: 8 },
+        ],
+        incomes: [
+          { id: 8, channel: 'paypal', account_id: 99, date: new Date('2026-03-01') },
+          { id: 9, channel: 'cash', account_id: 99, date: new Date('2026-03-01') },
+          { id: 10, channel: 'cash', account_id: 99, date: new Date('2026-03-01') },
+        ],
+      });
+
+      const result = await service.reapplyGatewayMapping(10, 1);
+
+      expect(result.by_gateway).toEqual([
+        { gateway: 'cash', account_id: 7, updated: 2 },
+        { gateway: 'paypal', account_id: 8, updated: 1 },
+      ]);
+    });
+
+    it('trocea las actualizaciones en lotes de 500', async () => {
+      const incomes = Array.from({ length: 1200 }, (_, i) => ({
+        id: i + 1,
+        channel: 'cash',
+        account_id: 99,
+        date: new Date('2026-03-01'),
+      }));
+      setup({ mappings: [{ gateway: 'cash', account_id: 7 }], incomes });
+
+      const result = await service.reapplyGatewayMapping(10, 1);
+
+      expect(result.updated).toBe(1200);
+      expect(prisma.income.updateMany).toHaveBeenCalledTimes(3);
+      const sizes = prisma.income.updateMany.mock.calls.map(
+        (c: any[]) => c[0].where.id.in.length,
+      );
+      expect(sizes).toEqual([500, 500, 200]);
+    });
+
+    it('no reasigna nada de una conexión que no es del usuario', async () => {
+      setup({});
+      prisma.shopifyConnection.findFirst.mockResolvedValue(null);
+
+      await expect(service.reapplyGatewayMapping(99, 1)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(prisma.income.updateMany).not.toHaveBeenCalled();
     });
   });
 

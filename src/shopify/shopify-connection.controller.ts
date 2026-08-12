@@ -110,7 +110,7 @@ export class ShopifyConnectionController {
   @ApiOperation({
     summary: 'Descubrir los gateways que usa la tienda',
     description:
-      'Consulta los últimos 100 pedidos en Shopify y devuelve los gateways distintos ' +
+      'Consulta los últimos 250 pedidos en Shopify y devuelve los gateways distintos ' +
       'con los que se ha cobrado, ordenados por frecuencia. Sirve para configurar el ' +
       'mapeo antes de importar nada: los gateways vistos en ingresos ya sincronizados ' +
       '(los que devuelve GET gateway-accounts) están vacíos hasta la primera importación.',
@@ -137,6 +137,28 @@ export class ShopifyConnectionController {
     @Body() dto: UpdateGatewayAccountsDto,
   ) {
     return this.shopifyService.updateGatewayAccounts(user.id, id, dto);
+  }
+
+  @Post('connections/:id/gateway-accounts/reapply')
+  @RequirePermissions('shopify_connection:update')
+  @ApiOperation({
+    summary: 'Aplicar el mapeo actual a los ingresos ya importados',
+    description:
+      'Reasigna la cuenta de los ingresos de Shopify ya sincronizados según el mapeo vigente, ' +
+      'incluida la caída a la cuenta por defecto para los gateways sin mapeo. ' +
+      'Con ?dry_run=true no escribe nada y devuelve el mismo resumen, para poder previsualizar. ' +
+      'Los ingresos con fecha en un mes cerrado no se tocan y se informan aparte.',
+  })
+  reapplyGatewayMapping(
+    @CurrentUser() user: { id: number; email: string },
+    @Param('id', ParseIntPipe) id: number,
+    @Query('dry_run') dryRun?: string,
+  ) {
+    return this.shopifyService.reapplyGatewayMapping(
+      user.id,
+      id,
+      dryRun === 'true',
+    );
   }
 
   @Post('connections/:id/backfill')
