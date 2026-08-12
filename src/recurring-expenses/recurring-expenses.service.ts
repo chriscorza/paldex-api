@@ -17,6 +17,9 @@ import {
 import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
 import { calculateDueDates, Frequency } from '../payroll/payroll-schedule';
 import { CloseGuard } from '../monthly-close/close-guard';
+import { Prisma as PrismaClient } from '@prisma/client';
+
+const Decimal = PrismaClient.Decimal;
 
 @Injectable()
 export class RecurringExpensesService {
@@ -78,6 +81,8 @@ export class RecurringExpensesService {
           active: dto.active ?? true,
           auto_generate: dto.auto_generate ?? true,
           requires_confirmation: dto.requires_confirmation ?? true,
+          invoice_status: dto.invoice_status ?? 'NOT_INVOICED',
+          tax_rate: dto.tax_rate ?? null,
           notes: dto.notes ?? null,
           user_id: ctx.userId,
         },
@@ -134,6 +139,7 @@ export class RecurringExpensesService {
     const skipped: string[] = [];
 
     for (const tpl of templates) {
+      const breakdown = this.splitTax(tpl.amount, tpl.tax_rate);
       const effectiveEnd =
         tpl.end_date && tpl.end_date < rangeEnd ? tpl.end_date : rangeEnd;
       const dueDates = calculateDueDates(
@@ -171,14 +177,16 @@ export class RecurringExpensesService {
               amount: tpl.amount,
               concept: tpl.concept,
               date: dd.scheduled_due_date,
-              invoiced: false,
               account_id: tpl.account_id ?? undefined,
               category_id: tpl.category_id,
               status: alreadyPaid ? 'PAID' : 'PENDING',
               paid_at: alreadyPaid ? dd.scheduled_due_date : null,
-              invoice_status: 'NOT_INVOICED',
-              is_tax_deductible: true,
-              tax_creditable_amount: 0,
+              invoiced: tpl.invoice_status === 'INVOICED',
+              invoice_status: tpl.invoice_status,
+              is_tax_deductible: tpl.invoice_status !== 'NOT_DEDUCTIBLE',
+              subtotal: breakdown.subtotal,
+              tax_amount: breakdown.tax,
+              tax_creditable_amount: breakdown.creditable,
               recurring_expense_id: tpl.id,
               scheduled_due_date: dd.scheduled_due_date,
               is_recurring: true,
@@ -204,5 +212,34 @@ export class RecurringExpensesService {
 
     /* `paid` deja ver cuántos se dieron por liquidados, que no es evidente. */
     return { created, paid, skipped: skipped.length };
+  }
+
+  /*
+   * Desglosa el IVA que ya viene dentro del importe: 1,000 al 16 % son 862.07
+   * de subtotal y 137.93 de impuesto.
+   *
+   * Sin tasa no se inventa ninguno. El gasto queda sin desglose y con el
+   * acreditable en cero, que es lo honesto cuando no se sabe si la factura lo
+   * trae — el reporte fiscal prefiere un cero visible a un IVA supuesto.
+   */
+  private splitTax(
+    amount: PrismaClient.Decimal,
+    taxRate: PrismaClient.Decimal | null,
+  ) {
+    if (!taxRate || Number(taxRate) === 0) {
+      return { subtotal: null, tax: null, creditable: 0 };
+    }
+
+    const total = new Decimal(amount);
+    const subtotal = total
+      .dividedBy(new Decimal(taxRate).dividedBy(100).plus(1))
+      .toDP(2);
+    const tax = total.minus(subtotal);
+
+    return {
+      subtotal: subtotal.toNumber(),
+      tax: tax.toNumber(),
+      creditable: tax.toNumber(),
+    };
   }
 }

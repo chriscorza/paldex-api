@@ -597,6 +597,8 @@ model RecurringExpense {
   active                  Boolean           @default(true)
   auto_generate           Boolean           @default(true)
   requires_confirmation   Boolean           @default(true)
+  invoice_status          InvoiceStatus     @default(NOT_INVOICED)
+  tax_rate                Decimal?          @db.Decimal(5, 2)
   notes                   String?
   user_id                 Int
   created_at              DateTime          @default(now())

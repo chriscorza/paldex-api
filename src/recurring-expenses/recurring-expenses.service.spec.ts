@@ -122,3 +122,107 @@ describe('RecurringExpensesService — carga de histórico', () => {
     expect(prisma.expense.create).not.toHaveBeenCalled();
   });
 });
+
+/*
+ * Un gasto fijo que llega con factura. La plantilla generaba siempre
+ * `NOT_INVOICED`, así que caía en el cubo de "sin factura" del reporte fiscal y
+ * su IVA no se acreditaba en ningún lado.
+ */
+describe('RecurringExpensesService — gastos facturados', () => {
+  let prisma: any;
+  let service: RecurringExpensesService;
+
+  const ctx = { userId: 1, scope: 'OWN' } as any;
+
+  const build = async (overrides: any) => {
+    prisma = {
+      recurringExpense: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 1,
+            concept: 'Estacionamiento',
+            amount: 1000,
+            category_id: 18,
+            account_id: 1,
+            frequency: 'MONTHLY',
+            due_day_of_week: null,
+            due_day_of_month: 5,
+            second_due_day_of_month: null,
+            start_date: new Date('2026-01-01'),
+            end_date: null,
+            invoice_status: 'NOT_INVOICED',
+            tax_rate: null,
+            ...overrides,
+          },
+        ]),
+      },
+      expense: { create: jest.fn() },
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        RecurringExpensesService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: CloseGuard, useValue: { ensureOpen: jest.fn() } },
+      ],
+    }).compile();
+
+    return module.get<RecurringExpensesService>(RecurringExpensesService);
+  };
+
+  const firstRow = () => prisma.expense.create.mock.calls[0][0].data;
+
+  it('marca como facturado lo que la plantilla dice que lo es', async () => {
+    service = await build({ invoice_status: 'INVOICED' });
+
+    await service.generate(ctx, {
+      start_date: '2026-02-01',
+      end_date: '2026-02-28',
+    });
+
+    expect(firstRow().invoice_status).toBe('INVOICED');
+    expect(firstRow().invoiced).toBe(true);
+  });
+
+  it('desglosa el IVA que viene dentro del importe', async () => {
+    service = await build({ invoice_status: 'INVOICED', tax_rate: 16 });
+
+    await service.generate(ctx, {
+      start_date: '2026-02-01',
+      end_date: '2026-02-28',
+    });
+
+    const row = firstRow();
+    expect(row.subtotal).toBe(862.07);
+    expect(row.tax_amount).toBe(137.93);
+    expect(row.tax_creditable_amount).toBe(137.93);
+    /* El importe pagado no se toca: el IVA iba dentro. */
+    expect(Number(row.amount)).toBe(1000);
+  });
+
+  it('no inventa IVA cuando la plantilla no lo declara', async () => {
+    service = await build({ invoice_status: 'INVOICED' });
+
+    await service.generate(ctx, {
+      start_date: '2026-02-01',
+      end_date: '2026-02-28',
+    });
+
+    const row = firstRow();
+    expect(row.subtotal).toBeNull();
+    expect(row.tax_amount).toBeNull();
+    expect(row.tax_creditable_amount).toBe(0);
+  });
+
+  it('deja de ser deducible si la plantilla lo dice', async () => {
+    service = await build({ invoice_status: 'NOT_DEDUCTIBLE' });
+
+    await service.generate(ctx, {
+      start_date: '2026-02-01',
+      end_date: '2026-02-28',
+    });
+
+    expect(firstRow().is_tax_deductible).toBe(false);
+    expect(firstRow().invoiced).toBe(false);
+  });
+});

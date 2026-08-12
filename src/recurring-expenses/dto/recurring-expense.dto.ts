@@ -11,7 +11,7 @@ import {
   Validate,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RecurringFrequency } from '@prisma/client';
+import { RecurringFrequency, InvoiceStatus } from '@prisma/client';
 
 export class CreateRecurringExpenseDto {
   @ApiProperty()
@@ -85,6 +85,23 @@ export class CreateRecurringExpenseDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({ enum: InvoiceStatus })
+  @IsOptional()
+  @IsEnum(InvoiceStatus)
+  invoice_status?: InvoiceStatus;
+
+  /*
+   * Porcentaje de IVA sobre el importe, que se entiende incluido: 1,000 al 16 %
+   * son 862.07 de subtotal y 137.93 de acreditable. Para «1,000 + IVA» se
+   * captura el importe ya sumado.
+   */
+  @ApiPropertyOptional({ description: 'IVA % incluido en el importe (ej. 16)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  tax_rate?: number;
 }
 
 export class UpdateRecurringExpenseDto {
