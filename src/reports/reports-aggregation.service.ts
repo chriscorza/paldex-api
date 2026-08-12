@@ -20,7 +20,7 @@ export class ReportsAggregationService {
       incomeAgg,
       incomeCounts,
       cogsAgg,
-      ,
+      expenseCategories,
       payrollPaidAgg,
       payrollPendingAgg,
       taxesPaidAgg,
@@ -53,21 +53,10 @@ export class ReportsAggregationService {
       this.prisma.expenseCategory.findMany({
         where: { OR: [{ user_id: ctx.userId }, { is_system: true }] },
         select: {
+          id: true,
           type: true,
           name: true,
           affects_operating_profit: true,
-          is_cash_outflow: true,
-          _count: {
-            select: {
-              expenses: {
-                where: {
-                  ...ownerFilter,
-                  paid_at: { gte: startDate, lte: endDate },
-                  status: 'PAID',
-                },
-              },
-            },
-          },
         },
       }),
       this.prisma.payrollPayment.aggregate({
@@ -104,6 +93,13 @@ export class ReportsAggregationService {
       (i: any) => i._count?.cogs > 0,
     ).length;
 
+    const expenses = await this.sumExpensesByPurpose(
+      ownerFilter,
+      expenseCategories,
+      startDate,
+      endDate,
+    );
+
     return {
       net_sales: incomeAgg._sum.net_amount ?? new Decimal(0),
       gross_sales: incomeAgg._sum.gross_amount ?? new Decimal(0),
@@ -116,18 +112,115 @@ export class ReportsAggregationService {
       cogs_confirmed_sales_count: cogsConfirmedCount,
       total_sales_count: incomeAgg._count.id,
 
-      operating_expenses: new Decimal(0),
+      operating_expenses: expenses.operating,
       payroll_paid: payrollPaidAgg._sum.net_amount ?? new Decimal(0),
       taxes_paid: taxesPaidAgg._sum.amount ?? new Decimal(0),
-      inventory_purchases: new Decimal(0),
-      owner_withdrawals: new Decimal(0),
-      reinvestment: new Decimal(0),
-      debt_principal_paid: new Decimal(0),
+      inventory_purchases: expenses.inventoryPurchases,
+      owner_withdrawals: expenses.ownerWithdrawals,
+      reinvestment: expenses.reinvestment,
+      debt_principal_paid: expenses.debtPrincipal,
 
-      pending_expenses: new Decimal(0),
+      pending_expenses: expenses.pending,
       pending_payroll: payrollPendingAgg._sum.net_amount ?? new Decimal(0),
       pending_taxes: taxesPendingAgg._sum.amount ?? new Decimal(0),
     };
+  }
+
+  /*
+   * Los gastos no entraban al P&L: estos seis totales estaban fijos en cero, así
+   * que daba igual cuántos se registraran —la utilidad operativa salía siempre
+   * igual a la bruta—. El motor de cálculo ya los esperaba.
+   *
+   * Cada gasto cae en un cubo según su categoría, no según su importe:
+   *  - `affects_operating_profit` es la marca de "esto reduce la operación", y
+   *    la ponen las categorías, incluidos sus overrides (los intereses de deuda
+   *    sí operan, el pago de capital no).
+   *  - Los de tipo COGS son compra de inventario y van a su propia línea: el
+   *    COGS del reporte sale de `CostOfGoodsSold`, nunca de un gasto, o la misma
+   *    mercancía se restaría dos veces (ver la regla en CLAUDE.md).
+   *  - Retiro y reinversión comparten el tipo OWNER y sólo se distinguen por el
+   *    nombre de la categoría del sistema. Es el único indicio que da el modelo;
+   *    si algún día importa de verdad, pide un discriminador propio.
+   */
+  private async sumExpensesByPurpose(
+    ownerFilter: { user_id?: number },
+    categories: {
+      id: number;
+      type: string;
+      name: string;
+      affects_operating_profit: boolean;
+    }[],
+    startDate: Date,
+    endDate: Date,
+  ) {
+    const [paidByCategory, pendingAgg] = await Promise.all([
+      this.prisma.expense.groupBy({
+        by: ['category_id'],
+        where: {
+          ...ownerFilter,
+          status: 'PAID',
+          paid_at: { gte: startDate, lte: endDate },
+        },
+        _sum: { amount: true },
+      }),
+      /*
+       * Lo pendiente no tiene `paid_at` —justamente por eso está pendiente— así
+       * que se acota por la fecha del gasto, igual que hace el preflight del
+       * cierre mensual.
+       */
+      this.prisma.expense.aggregate({
+        where: {
+          ...ownerFilter,
+          status: 'PENDING',
+          date: { gte: startDate, lte: endDate },
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const byId = new Map(categories.map((c) => [c.id, c]));
+
+    const totals = {
+      operating: new Decimal(0),
+      inventoryPurchases: new Decimal(0),
+      ownerWithdrawals: new Decimal(0),
+      reinvestment: new Decimal(0),
+      debtPrincipal: new Decimal(0),
+      pending: pendingAgg._sum.amount ?? new Decimal(0),
+    };
+
+    for (const row of paidByCategory) {
+      const amount = new Decimal(row._sum.amount ?? 0);
+      const category = row.category_id ? byId.get(row.category_id) : undefined;
+
+      /* Un gasto sin categoría reconocible cuenta como operativo: es lo que
+         menos miente cuando no se sabe qué era. */
+      if (!category) {
+        totals.operating = totals.operating.plus(amount);
+        continue;
+      }
+
+      if (category.affects_operating_profit) {
+        totals.operating = totals.operating.plus(amount);
+      }
+
+      if (category.type === 'COGS') {
+        totals.inventoryPurchases = totals.inventoryPurchases.plus(amount);
+      } else if (category.type === 'OWNER') {
+        if (category.name === 'Reinversión') {
+          totals.reinvestment = totals.reinvestment.plus(amount);
+        } else {
+          totals.ownerWithdrawals = totals.ownerWithdrawals.plus(amount);
+        }
+      } else if (
+        category.type === 'DEBT' &&
+        !category.affects_operating_profit
+      ) {
+        totals.debtPrincipal = totals.debtPrincipal.plus(amount);
+      }
+    }
+
+    return totals;
   }
 
   async getExpensesBreakdown(
