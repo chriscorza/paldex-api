@@ -12,6 +12,11 @@ import { ShopifyReportQueryDto } from './dto/shopify-report-query.dto';
 import { BadRequestException } from '@nestjs/common';
 import { LineItemProjectionService } from '../shopify/line-item-projection.service';
 import { escapeCsvField } from '../common/csv';
+import {
+  endOfDayInZone,
+  monthRangeInZone,
+  startOfDayInZone,
+} from '../common/timezone';
 
 @ApiTags('Reports')
 @ApiBearerAuth()
@@ -363,13 +368,16 @@ export class ReportsController {
       if (query.month! < 1 || query.month! > 12) {
         throw new BadRequestException('Month must be between 1 and 12');
       }
-      const startDate = new Date(query.year!, query.month! - 1, 1);
-      const endDate = new Date(query.year!, query.month!, 0, 23, 59, 59, 999);
-      return { startDate, endDate };
+      /*
+       * `new Date(año, mes, día)` construía el rango en la zona del servidor
+       * —UTC dentro del contenedor— y el de fechas sueltas lo hacía en UTC
+       * siempre. Los dos caminos ya usan la zona del negocio.
+       */
+      return monthRangeInZone(query.year!, query.month!);
     } else if (hasDates) {
       return {
-        startDate: new Date(query.start_date!),
-        endDate: new Date(query.end_date!),
+        startDate: startOfDayInZone(query.start_date!),
+        endDate: endOfDayInZone(query.end_date!),
       };
     } else {
       throw new BadRequestException(

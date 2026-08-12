@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
 import { ShopifyReportQueryDto } from './dto/shopify-report-query.dto';
+import { endOfDayInZone, startOfDayInZone } from '../common/timezone';
 import { Prisma as PrismaClient } from '@prisma/client';
 const Decimal = PrismaClient.Decimal;
 
@@ -13,8 +14,8 @@ export class ShopifyProfitabilityService {
     ctx: OwnershipContext,
     query: ShopifyReportQueryDto,
   ) {
-    const startDate = new Date(query.start_date);
-    const endDate = new Date(query.end_date);
+    const startDate = startOfDayInZone(query.start_date);
+    const endDate = endOfDayInZone(query.end_date);
 
     if (startDate >= endDate)
       throw new Error('start_date must be before end_date');
@@ -199,8 +200,8 @@ export class ShopifyProfitabilityService {
     ctx: OwnershipContext,
     query: ShopifyReportQueryDto,
   ) {
-    const startDate = new Date(query.start_date);
-    const endDate = new Date(query.end_date);
+    const startDate = startOfDayInZone(query.start_date);
+    const endDate = endOfDayInZone(query.end_date);
     if (startDate >= endDate)
       throw new Error('start_date must be before end_date');
 
@@ -291,8 +292,8 @@ export class ShopifyProfitabilityService {
     ctx: OwnershipContext,
     query: ShopifyReportQueryDto,
   ) {
-    const startDate = new Date(query.start_date);
-    const endDate = new Date(query.end_date);
+    const startDate = startOfDayInZone(query.start_date);
+    const endDate = endOfDayInZone(query.end_date);
     if (startDate >= endDate)
       throw new Error('start_date must be before end_date');
 
@@ -388,8 +389,8 @@ export class ShopifyProfitabilityService {
     ctx: OwnershipContext,
     query: ShopifyReportQueryDto,
   ) {
-    const startDate = new Date(query.start_date);
-    const endDate = new Date(query.end_date);
+    const startDate = startOfDayInZone(query.start_date);
+    const endDate = endOfDayInZone(query.end_date);
 
     if (startDate >= endDate)
       throw new Error('start_date must be before end_date');

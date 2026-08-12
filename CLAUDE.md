@@ -72,6 +72,18 @@ Three rules prevent double-counting in financial reports:
 2. **Taxes**: `TaxPayment` is the single source of truth for tax payments (IVA/ISR). Paying taxes **must not** create `Expense` rows.
 3. **COGS**: The COGS line in reports comes **exclusively** from `CostOfGoodsSold` linked to `Income`. An `Expense` of category type `COGS` represents inventory purchases, shown in a separate `inventory_purchases` line — it does not contribute to COGS.
 
+## Report date ranges and time zone
+
+Every report range is built in the **business time zone**, never UTC — `src/common/timezone.ts`.
+Set `REPORTS_TIMEZONE` to an IANA name to change it; it defaults to `America/Mexico_City`.
+
+- `start_date` means 00:00:00.000 of that day in that zone, `end_date` means 23:59:59.999 — the
+  final day is **included**. A string that already carries a time is taken literally instead.
+- `year`+`month` covers the whole month in the same zone.
+
+This matters when reconciling against Shopify: its sales reports use the shop's zone, so filtering
+in UTC shifts a Mexican shop's month by 6 hours and drops the last (busiest) evening of it.
+
 ## ISR estimate
 
 Set `ISR_ESTIMATE_PERCENTAGE` env var to a number (e.g., `30`) to enable ISR estimation.

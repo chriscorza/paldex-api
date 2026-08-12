@@ -152,7 +152,9 @@ describe('ShopifyProfitabilityService — pedidos sin ingreso', () => {
 
     const { where } = prisma.shopifyOrder.findMany.mock.calls[0][0];
     expect(where.incomes).toEqual({ none: {} });
-    expect(where.created_at.gte).toEqual(new Date('2026-07-01'));
+    /* El rango va en la zona del negocio, no en UTC. */
+    expect(where.created_at.gte.toISOString()).toBe('2026-07-01T06:00:00.000Z');
+    expect(where.created_at.lte.toISOString()).toBe('2026-08-02T05:59:59.999Z');
     expect(where.shopify_connection).toEqual({ user_id: 1 });
   });
 

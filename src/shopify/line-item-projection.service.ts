@@ -6,6 +6,7 @@ import { Prisma as PrismaClient } from '@prisma/client';
 const Decimal = PrismaClient.Decimal;
 type Decimal = PrismaClient.Decimal;
 import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import { endOfDayInZone, startOfDayInZone } from '../common/timezone';
 
 @Injectable()
 export class LineItemProjectionService {
@@ -214,7 +215,10 @@ export class LineItemProjectionService {
 
     const orders = await this.prisma.shopifyOrder.findMany({
       where: {
-        created_at: { gte: new Date(startDate), lte: new Date(endDate) },
+        created_at: {
+          gte: startOfDayInZone(startDate),
+          lte: endOfDayInZone(endDate),
+        },
         ...(ownerFilter.user_id
           ? { shopify_connection: { user_id: ownerFilter.user_id } }
           : {}),
