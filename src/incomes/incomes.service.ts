@@ -21,6 +21,7 @@ import {
 } from '../common/filters';
 import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
 import { Prisma as PrismaClient } from '@prisma/client';
+import { startOfDayInZone } from '../common/timezone';
 const Decimal = PrismaClient.Decimal;
 type Decimal = PrismaClient.Decimal;
 
@@ -81,7 +82,7 @@ export class IncomesService {
           user_id: ctx.userId,
           amount: dto.amount,
           concept: dto.concept,
-          date: dto.date,
+          date: startOfDayInZone(dto.date),
           invoiced: dto.invoiced,
           account_id: dto.account_id,
           income_type: dto.income_type ?? 'OTHER',
@@ -142,7 +143,7 @@ export class IncomesService {
 
     if (dto.amount !== undefined) updateData.amount = dto.amount;
     if (dto.concept !== undefined) updateData.concept = dto.concept;
-    if (dto.date !== undefined) updateData.date = dto.date;
+    if (dto.date !== undefined) updateData.date = startOfDayInZone(dto.date);
     if (dto.invoiced !== undefined) updateData.invoiced = dto.invoiced;
     if (dto.account_id !== undefined) updateData.account_id = dto.account_id;
     if (dto.income_type !== undefined) updateData.income_type = dto.income_type;

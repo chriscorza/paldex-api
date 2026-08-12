@@ -21,6 +21,7 @@ import {
   paginatedResponse,
 } from '../common/filters';
 import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import { startOfDayInZone } from '../common/timezone';
 
 @Injectable()
 export class ExpensesService {
@@ -97,13 +98,13 @@ export class ExpensesService {
           user_id: ctx.userId,
           amount: dto.amount,
           concept: dto.concept,
-          date: dto.date,
+          date: startOfDayInZone(dto.date),
           invoiced: invoice_status === 'INVOICED',
           account_id: dto.account_id,
           category_id: dto.category_id ?? null,
           vendor: dto.vendor ?? null,
           status: status as ExpenseStatus,
-          paid_at: paid_at ? new Date(paid_at) : null,
+          paid_at: paid_at ? startOfDayInZone(paid_at) : null,
           invoice_status: invoice_status as InvoiceStatus,
           invoice_uuid: dto.invoice_uuid ?? null,
           supplier_rfc: dto.supplier_rfc ?? null,
@@ -181,14 +182,14 @@ export class ExpensesService {
 
     if (dto.amount !== undefined) updateData.amount = dto.amount;
     if (dto.concept !== undefined) updateData.concept = dto.concept;
-    if (dto.date !== undefined) updateData.date = dto.date;
+    if (dto.date !== undefined) updateData.date = startOfDayInZone(dto.date);
     if (dto.invoiced !== undefined) updateData.invoiced = dto.invoiced;
     if (dto.account_id !== undefined) updateData.account_id = dto.account_id;
     if (dto.category_id !== undefined) updateData.category_id = dto.category_id;
     if (dto.vendor !== undefined) updateData.vendor = dto.vendor;
     if (dto.status !== undefined) updateData.status = status;
     if (dto.paid_at !== undefined || dto.status !== undefined)
-      updateData.paid_at = paid_at ? new Date(paid_at) : null;
+      updateData.paid_at = paid_at ? startOfDayInZone(paid_at) : null;
     if (dto.invoice_status !== undefined)
       updateData.invoice_status = invoice_status;
     if (dto.invoiced !== undefined || dto.invoice_status !== undefined)

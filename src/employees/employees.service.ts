@@ -16,6 +16,7 @@ import {
 } from './entities/employee.entity';
 import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
 import { PayFrequency } from '@prisma/client';
+import { startOfDayInZone, endOfDayInZone } from '../common/timezone';
 
 @Injectable()
 export class EmployeesService {
@@ -81,8 +82,14 @@ export class EmployeesService {
         biweekly_second_day: dto.biweekly_second_day ?? null,
         monthly_pay_day: dto.monthly_pay_day ?? null,
         default_payment_account_id: dto.default_payment_account_id ?? null,
-        started_at: dto.started_at ?? new Date().toISOString(),
-        ended_at: dto.ended_at ? new Date(dto.ended_at) : null,
+        started_at: dto.started_at
+          ? startOfDayInZone(dto.started_at)
+          : new Date(),
+        /*
+         * Fin de jornada, no medianoche: `ended_at` es el último día que se
+         * trabajó, y con la medianoche el pago de ese mismo día caía fuera.
+         */
+        ended_at: dto.ended_at ? endOfDayInZone(dto.ended_at) : null,
         active: dto.active ?? true,
         user_id: ctx.userId,
       },
