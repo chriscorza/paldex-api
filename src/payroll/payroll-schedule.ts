@@ -1,3 +1,4 @@
+import { startOfDayInZone } from '../common/timezone';
 export interface PayrollPeriod {
   period_start: Date;
   period_end: Date;
@@ -9,6 +10,22 @@ export interface DueDate {
 }
 
 export type Frequency = 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'YEARLY';
+
+/*
+ * Las fechas se construyen con `new Date(año, mes, día)`, o sea medianoche en
+ * la zona del servidor —UTC dentro del contenedor—. Los reportes, en cambio,
+ * recortan los meses en la zona del negocio, así que un vencimiento el día 1
+ * caía seis horas antes del inicio de su mes y se contaba en el anterior.
+ *
+ * Se re-ancla el día del calendario a su medianoche real. El día no cambia:
+ * cambia el instante que lo representa.
+ */
+function toBusinessDay(date: Date): Date {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return startOfDayInZone(`${year}-${month}-${day}`);
+}
 
 export function calculatePayDates(
   config: {
@@ -23,28 +40,36 @@ export function calculatePayDates(
   rangeStart: Date,
   rangeEnd: Date,
 ): PayrollPeriod[] {
-  switch (config.frequency) {
-    case 'WEEKLY':
-      return calculateWeekly(config.weekly_day!, rangeStart, rangeEnd);
-    case 'BIWEEKLY':
-      return calculateBiweekly(
-        config.biweekly_first_day!,
-        config.biweekly_second_day!,
-        rangeStart,
-        rangeEnd,
-      );
-    case 'MONTHLY':
-      return calculateMonthly(config.monthly_day!, rangeStart, rangeEnd);
-    case 'YEARLY':
-      return calculateYearly(
-        config.yearly_month!,
-        config.yearly_day!,
-        rangeStart,
-        rangeEnd,
-      );
-    default:
-      return [];
-  }
+  const periods = ((): PayrollPeriod[] => {
+    switch (config.frequency) {
+      case 'WEEKLY':
+        return calculateWeekly(config.weekly_day!, rangeStart, rangeEnd);
+      case 'BIWEEKLY':
+        return calculateBiweekly(
+          config.biweekly_first_day!,
+          config.biweekly_second_day!,
+          rangeStart,
+          rangeEnd,
+        );
+      case 'MONTHLY':
+        return calculateMonthly(config.monthly_day!, rangeStart, rangeEnd);
+      case 'YEARLY':
+        return calculateYearly(
+          config.yearly_month!,
+          config.yearly_day!,
+          rangeStart,
+          rangeEnd,
+        );
+      default:
+        return [];
+    }
+  })();
+
+  return periods.map((period) => ({
+    period_start: toBusinessDay(period.period_start),
+    period_end: toBusinessDay(period.period_end),
+    scheduled_pay_date: toBusinessDay(period.scheduled_pay_date),
+  }));
 }
 
 export function calculateDueDates(
