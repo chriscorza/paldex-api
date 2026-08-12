@@ -15,6 +15,9 @@ export class RecurringExpenseEntity {
   active: boolean;
   auto_generate: boolean;
   requires_confirmation: boolean;
+  invoice_status: string;
+  /* Porcentaje, no fracción: 16 es 16 %. */
+  tax_rate: number | null;
   notes: string | null;
   user_id: number;
   created_at: Date;
@@ -22,6 +25,10 @@ export class RecurringExpenseEntity {
   constructor(partial: any) {
     Object.assign(this, partial);
     this.amount = toMoneyNumber(partial.amount) ?? 0;
+    this.tax_rate =
+      partial.tax_rate === null || partial.tax_rate === undefined
+        ? null
+        : Number(partial.tax_rate);
   }
 }
 
@@ -40,6 +47,8 @@ export const RECURRING_SELECT = {
   active: true,
   auto_generate: true,
   requires_confirmation: true,
+  invoice_status: true,
+  tax_rate: true,
   notes: true,
   user_id: true,
   created_at: true,
