@@ -159,6 +159,8 @@ model ShopifyOrder {
   shopify_order_total    Float?
   discount_total         Float
   tax_total              Float
+  shipping_total         Float            @default(0)
+  cancelled_at           DateTime?
   cost_total             Float
   profit_total           Float
   has_missing_cost_data  Boolean          @default(false)

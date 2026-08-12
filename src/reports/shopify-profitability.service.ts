@@ -59,7 +59,6 @@ export class ShopifyProfitabilityService {
         gross_profit: number;
         orderIds: Set<number>;
         missing_cost_items: number;
-        total_items: number;
       }
     >();
 
@@ -78,7 +77,6 @@ export class ShopifyProfitabilityService {
           gross_profit: 0,
           orderIds: new Set(),
           missing_cost_items: 0,
-          total_items: 0,
         };
         categoryMap.set(key, cat);
       }
@@ -90,7 +88,6 @@ export class ShopifyProfitabilityService {
       cat.cogs += line.total_cost ? Number(line.total_cost) : 0;
       cat.gross_profit += line.gross_profit ? Number(line.gross_profit) : 0;
       cat.orderIds.add(line.shopify_order_id);
-      cat.total_items++;
       if (line.unit_cost === null) cat.missing_cost_items++;
     }
 
@@ -163,31 +160,35 @@ export class ShopifyProfitabilityService {
         .map((c) => c.category_name),
     };
 
-    const totalItems = categories.reduce(
-      (s, c) =>
-        s +
-        c.missing_cost_items +
-        (c.missing_cost_items > 0 ? 0 : (c as any).total_items || 0),
+    /*
+     * La calidad del dato se mide sobre los artículos, no sobre las categorías:
+     * una sola línea sin costo no invalida el resto de su categoría. Contar por
+     * categoría daba «0 % de cobertura» en tiendas que sí tenían casi todos los
+     * costos.
+     */
+    const totalItems = lines.length;
+    const missingItems = lines.filter((l) => l.unit_cost === null).length;
+    const itemsWithCost = totalItems - missingItems;
+
+    const salesWithoutCost = lines.reduce(
+      (s, l) => (l.unit_cost === null ? s + Number(l.net_sales) : s),
       0,
     );
-    const itemsWithCost =
-      totalItems - categories.reduce((s, c) => s + c.missing_cost_items, 0);
+    const grossProfitConfirmed = lines.reduce(
+      (s, l) => (l.unit_cost === null ? s : s + Number(l.gross_profit ?? 0)),
+      0,
+    );
 
     const costDataQuality = {
       total_line_items: totalItems,
       line_items_with_cost: itemsWithCost,
-      missing_cost_items: totalItems - itemsWithCost,
-      sales_without_cost: categories.reduce(
-        (s, c) => (c.incomplete_cost_data ? s + c.net_sales : s),
-        0,
-      ),
+      missing_cost_items: missingItems,
+      sales_without_cost: Math.round(salesWithoutCost * 100) / 100,
       cost_data_coverage:
         totalItems > 0
           ? Math.round((itemsWithCost / totalItems) * 100 * 100) / 100
           : null,
-      gross_profit_confirmed: categories
-        .filter((c) => !c.incomplete_cost_data)
-        .reduce((s, c) => s + c.gross_profit, 0),
+      gross_profit_confirmed: Math.round(grossProfitConfirmed * 100) / 100,
       pending_cost_updates: false,
     };
 
@@ -367,6 +368,111 @@ export class ShopifyProfitabilityService {
     return {
       channels,
       commission_data_available: channels.some((c) => c.fees > 0) ? true : null,
+    };
+  }
+
+  /*
+   * Conciliación contra el reporte de ventas de Shopify.
+   *
+   * Los dos números no pueden cuadrar por construcción: Shopify cuenta el
+   * pedido el día que se hizo, y paldex cuenta el ingreso el día que se cobró
+   * (`transaction.processed_at`), descartando lo que no sea sale/capture con
+   * éxito. Un pedido pendiente de pago, autorizado sin capturar, o cobrado por
+   * fuera de Shopify, existe como pedido pero nunca genera ingreso.
+   *
+   * Esto lista exactamente esos pedidos, que son la diferencia entre los dos
+   * reportes. `ShopifyReconciliationService` no sirve para esto: sólo mira la
+   * ventana desde `last_synced_at`, no un periodo arbitrario.
+   */
+  async getOrdersWithoutIncome(
+    ctx: OwnershipContext,
+    query: ShopifyReportQueryDto,
+  ) {
+    const startDate = new Date(query.start_date);
+    const endDate = new Date(query.end_date);
+
+    if (startDate >= endDate)
+      throw new Error('start_date must be before end_date');
+
+    const ownerFilter = buildOwnerFilter(ctx) as { user_id?: number };
+
+    const periodFilter = {
+      created_at: { gte: startDate, lte: endDate },
+      ...(ownerFilter.user_id
+        ? { shopify_connection: { user_id: ownerFilter.user_id } }
+        : {}),
+    };
+
+    /* `incomes: { none: {} }` = ningún cobro colgado del pedido. */
+    const orphanFilter = { ...periodFilter, incomes: { none: {} } };
+
+    const page = query.page || 1;
+    const limit = query.limit || 50;
+
+    const [ordersTotal, orphanCount, orphanAgg, orders] =
+      await this.prisma.$transaction([
+        this.prisma.shopifyOrder.count({ where: periodFilter }),
+        this.prisma.shopifyOrder.count({ where: orphanFilter }),
+        this.prisma.shopifyOrder.aggregate({
+          where: orphanFilter,
+          _sum: { shopify_order_total: true, items_total: true },
+        }),
+        this.prisma.shopifyOrder.findMany({
+          where: orphanFilter,
+          select: {
+            id: true,
+            order_number: true,
+            created_at: true,
+            items_total: true,
+            shopify_order_total: true,
+            discount_total: true,
+            tax_total: true,
+          },
+          orderBy: { created_at: 'asc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+      ]);
+
+    const incomeAgg = await this.prisma.income.aggregate({
+      where: {
+        ...ownerFilter,
+        date: { gte: startDate, lte: endDate },
+        shopify_order: { isNot: null },
+      },
+      _sum: { net_amount: true },
+      _count: { id: true },
+    });
+
+    const salesWithoutIncome = Number(orphanAgg._sum.shopify_order_total ?? 0);
+
+    return {
+      summary: {
+        orders_total: ordersTotal,
+        orders_with_income: ordersTotal - orphanCount,
+        orders_without_income: orphanCount,
+        /*
+         * Lo que Shopify contaría y paldex no. No es exactamente la diferencia
+         * entre los dos reportes: paldex fecha por cobro, así que un pedido de
+         * fin de mes cobrado al mes siguiente también corre el número.
+         */
+        sales_without_income: Math.round(salesWithoutIncome * 100) / 100,
+        income_count: incomeAgg._count.id,
+        income_total:
+          Math.round(Number(incomeAgg._sum.net_amount ?? 0) * 100) / 100,
+      },
+      data: orders.map((o) => ({
+        order_id: o.id,
+        order_number: o.order_number,
+        order_date: o.created_at,
+        items_total: Number(o.items_total),
+        order_total: Number(o.shopify_order_total ?? 0),
+        discount_total: Number(o.discount_total),
+        tax_total: Number(o.tax_total),
+      })),
+      total: orphanCount,
+      page,
+      limit,
     };
   }
 }

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ShopifyConnectionService } from './shopify-connection.service';
+import { LineItemProjectionService } from './line-item-projection.service';
 import { Prisma as PrismaClient } from '@prisma/client';
 
 const Decimal = PrismaClient.Decimal;
@@ -21,6 +22,7 @@ export class ShopifyTransactionSyncService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => ShopifyConnectionService))
     private connectionService: ShopifyConnectionService,
+    private projection: LineItemProjectionService,
   ) {}
 
   async handleTransactionCreate(
@@ -111,9 +113,46 @@ export class ShopifyTransactionSyncService {
       this.logger.log(
         `Created income for transaction ${transactionId}, order ${externalOrderGid}`,
       );
+
+      /*
+       * El pedido ya se proyectó antes de que existiera este income, así que su
+       * costo no llegó a colgarse de ningún lado. Ahora que el income existe,
+       * se vuelve a repartir el costo del pedido entre los ingresos que tenga.
+       */
+      if (existingShopifyOrder?.id) {
+        await this.projection.propagateToIncomes(existingShopifyOrder.id);
+      }
     } catch (err: any) {
       if (err?.code === 'P2002') {
-        this.logger.debug(`Duplicate transaction ${transactionId}, skipped`);
+        /*
+         * El ingreso ya existe: es una reimportación, no un duplicado. Antes se
+         * salía sin tocar nada, así que ninguna corrección de importes llegaba
+         * al histórico ya cargado —hubo que arreglar `net_amount` por migración
+         * SQL justo por esto—. Ahora se refresca con lo que dice Shopify.
+         *
+         * `account_id` no se toca a propósito: lo decide el mapeo de gateways y
+         * el usuario puede haberlo reasignado a mano.
+         */
+        await this.prisma.income.updateMany({
+          where: { source: 'shopify', external_transaction_id: transactionId },
+          data: {
+            amount,
+            gross_amount: amount,
+            net_amount: amount,
+            date: transactionDate,
+            ...(existingShopifyOrder?.id
+              ? { shopify_order_id: existingShopifyOrder.id }
+              : {}),
+          },
+        });
+
+        this.logger.debug(
+          `Income for transaction ${transactionId} already existed, amounts refreshed`,
+        );
+
+        if (existingShopifyOrder?.id) {
+          await this.projection.propagateToIncomes(existingShopifyOrder.id);
+        }
         return;
       }
       throw err;

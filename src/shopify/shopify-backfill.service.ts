@@ -2,9 +2,21 @@ import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ShopifyGraphQLService } from './shopify-graphql.service';
 import { ShopifyOrderSyncService } from './shopify-order-sync.service';
 import { ShopifyTransactionSyncService } from './shopify-transaction-sync.service';
+import { Prisma as PrismaClient } from '@prisma/client';
+
+const Decimal = PrismaClient.Decimal;
+type Decimal = PrismaClient.Decimal;
 
 /*
  * Consulta única del backfill.
+ *
+ * El costo, el tipo de producto y las etiquetas viajan aquí dentro —no son
+ * conexiones, así que no cuentan para el límite de anidamiento— para que el
+ * backfill no tenga que preguntar por cada pedido: eso era una llamada GraphQL
+ * por pedido, sin reintentos, y un throttle de Shopify dejaba ese pedido sin
+ * costo y sin categoría en silencio. Las colecciones sí son una conexión y no
+ * caben; se siguen resolviendo en `enrichLineItems`, que ya sólo hace falta
+ * para los productos sin `productType`.
  *
  * Restricciones de las Bulk Operations que condicionan su forma:
  *  - Máximo 5 conexiones y 2 niveles de anidamiento. Aquí hay 2: `orders` y
@@ -25,16 +37,21 @@ const BULK_ORDERS_QUERY = `
         node {
           id
           name
+          createdAt
+          cancelledAt
           totalPriceSet { shopMoney { amount } }
           totalDiscountsSet { shopMoney { amount } }
           totalTaxSet { shopMoney { amount } }
+          totalShippingPriceSet { shopMoney { amount } }
           transactions {
             id
             kind
             status
             gateway
+            test
             processedAt
             amountSet { shopMoney { amount } }
+            parentTransaction { id }
           }
           lineItems {
             edges {
@@ -46,8 +63,8 @@ const BULK_ORDERS_QUERY = `
                 sku
                 quantity
                 vendor
-                product { id }
-                variant { id }
+                product { id productType tags }
+                variant { id inventoryItem { unitCost { amount } } }
                 originalUnitPriceSet { shopMoney { amount } }
                 discountAllocations {
                   allocatedAmountSet { shopMoney { amount } }
@@ -351,6 +368,13 @@ export class ShopifyBackfillService {
       quantity: li.quantity,
       price: this.money(li.originalUnitPriceSet),
       vendor: li.vendor ?? null,
+      /*
+       * Mismos nombres que usa `enrichLineItems`: si vienen de aquí, esa
+       * consulta por pedido ya no hace falta.
+       */
+      product_type: li.product?.productType || null,
+      tags: li.product?.tags?.length ? li.product.tags : null,
+      unit_cost: this.optionalMoney(li.variant?.inventoryItem?.unitCost),
       discount_allocations: (li.discountAllocations ?? []).map((d: any) => ({
         amount: this.money(d.allocatedAmountSet),
       })),
@@ -364,9 +388,12 @@ export class ShopifyBackfillService {
     return {
       admin_graphql_api_id: raw.id,
       order_number: orderNumber,
+      created_at: raw.createdAt ?? null,
+      cancelled_at: raw.cancelledAt ?? null,
       total_price: this.money(raw.totalPriceSet),
       total_discounts: this.money(raw.totalDiscountsSet),
       total_tax: this.money(raw.totalTaxSet),
+      total_shipping: this.money(raw.totalShippingPriceSet),
       line_items: lineItems,
     };
   }
@@ -380,21 +407,57 @@ export class ShopifyBackfillService {
   private extractTransactions(raw: any): any[] {
     const orderId = this.legacyId(raw?.id);
 
-    return (raw?.transactions ?? [])
-      .filter((txn: any) => {
-        const kind = (txn?.kind || '').toLowerCase();
-        const status = (txn?.status || '').toLowerCase();
-        return (kind === 'sale' || kind === 'capture') && status === 'success';
-      })
-      .map((txn: any) => ({
-        id: this.legacyId(txn.id),
-        order_id: orderId,
-        kind: txn.kind,
-        status: txn.status,
-        gateway: txn.gateway,
-        amount: this.money(txn.amountSet),
-        processed_at: txn.processedAt,
-      }));
+    const all = raw?.transactions ?? [];
+    const isSuccessful = (txn: any) =>
+      (txn?.status || '').toLowerCase() === 'success' && txn?.test !== true;
+
+    /*
+     * Los reembolsos sólo llegaban por webhook, así que lo devuelto antes de la
+     * importación quedaba cobrado al 100 % para siempre.
+     *
+     * Se restan del cobro que los originó en vez de aplicarlos aparte:
+     * `handleRefund` rebaja el importe del ingreso sin dejar constancia de que
+     * ya lo hizo, así que reimportar lo restaría otra vez. Calculado así, el
+     * resultado es el mismo se importe una vez o diez.
+     */
+    const refundedByParent = new Map<string, Decimal>();
+    for (const txn of all) {
+      if ((txn?.kind || '').toLowerCase() !== 'refund') continue;
+      if (!isSuccessful(txn)) continue;
+      const parentId = this.legacyId(txn.parentTransaction?.id);
+      if (!parentId) continue;
+      const previous = refundedByParent.get(parentId) ?? new Decimal(0);
+      refundedByParent.set(
+        parentId,
+        previous.plus(new Decimal(this.money(txn.amountSet))),
+      );
+    }
+
+    return (
+      all
+        .filter((txn: any) => {
+          const kind = (txn?.kind || '').toLowerCase();
+          /* Una pasarela en modo prueba entraría como venta real. */
+          return (kind === 'sale' || kind === 'capture') && isSuccessful(txn);
+        })
+        .map((txn: any) => {
+          const id = this.legacyId(txn.id);
+          const charged = new Decimal(this.money(txn.amountSet));
+          const refunded = (id && refundedByParent.get(id)) || new Decimal(0);
+
+          return {
+            id,
+            order_id: orderId,
+            kind: txn.kind,
+            status: txn.status,
+            gateway: txn.gateway,
+            amount: charged.minus(refunded).toFixed(2),
+            processed_at: txn.processedAt,
+          };
+        })
+        /* Devuelto entero: no es un ingreso de cero, es que no hubo ingreso. */
+        .filter((txn: any) => Number(txn.amount) > 0)
+    );
   }
 
   /* "gid://shopify/Order/450789469" -> "450789469" */
@@ -406,5 +469,13 @@ export class ShopifyBackfillService {
 
   private money(bag: any): string {
     return bag?.shopMoney?.amount ?? '0';
+  }
+
+  /* Como `money`, pero distingue «cero» de «Shopify no lo sabe». */
+  private optionalMoney(bag: any): number | null {
+    const amount = bag?.amount ?? bag?.shopMoney?.amount;
+    if (amount === undefined || amount === null) return null;
+    const value = Number(amount);
+    return Number.isFinite(value) ? value : null;
   }
 }

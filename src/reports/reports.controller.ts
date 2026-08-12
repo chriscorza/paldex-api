@@ -1,5 +1,5 @@
 import { Controller, Get, Query, Req, Post, Body, Res } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { OwnershipContext } from '../common/ownership';
@@ -158,6 +158,27 @@ export class ReportsController {
       scope: (request as any).permissionScope || 'OWN',
     };
     return this.shopifyService.getChannelProfitability(ctx, query);
+  }
+
+  @Get('shopify/orders-without-income')
+  @ApiOperation({
+    summary: 'Pedidos de Shopify sin ningún cobro registrado',
+    description:
+      'La conciliación contra el reporte de ventas de Shopify: lista los pedidos ' +
+      'del periodo que no generaron ningún ingreso —pendientes de pago, ' +
+      'autorizados sin capturar o cobrados fuera de Shopify— porque son la ' +
+      'diferencia entre lo que reporta Shopify y lo que suma paldex.',
+  })
+  async shopifyOrdersWithoutIncome(
+    @CurrentUser() user: { id: number },
+    @Req() request: any,
+    @Query() query: ShopifyReportQueryDto,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: (request as any).permissionScope || 'OWN',
+    };
+    return this.shopifyService.getOrdersWithoutIncome(ctx, query);
   }
 
   @Post('shopify/recalculate-costs')

@@ -13,6 +13,7 @@ const ORDER_GID = 'gid://shopify/Order/450789469';
 const orderLine = {
   id: ORDER_GID,
   name: '#1001',
+  createdAt: '2026-03-01T09:58:00Z',
   totalPriceSet: { shopMoney: { amount: '598.94' } },
   totalDiscountsSet: { shopMoney: { amount: '10.00' } },
   totalTaxSet: { shopMoney: { amount: '11.94' } },
@@ -156,6 +157,17 @@ describe('ShopifyBackfillService — procesamiento del JSONL', () => {
     const [, payload] = orderSync.handleOrderCreate.mock.calls[0];
     expect(payload.order_number).toBe(1001);
     expect(payload.admin_graphql_api_id).toBe(ORDER_GID);
+  });
+
+  /*
+   * Sin esta fecha el pedido se guarda con el `now()` del backfill, y los
+   * reportes que filtran por la fecha del pedido dejan de ver el histórico.
+   */
+  it('conserva la fecha del pedido en Shopify, no la de la importación', async () => {
+    await runWith(toJsonl([orderLine, lineItemLine]));
+
+    const [, payload] = orderSync.handleOrderCreate.mock.calls[0];
+    expect(payload.created_at).toBe('2026-03-01T09:58:00Z');
   });
 
   it('sólo sincroniza transacciones sale/capture con status success', async () => {
@@ -341,5 +353,186 @@ describe('ShopifyBackfillService — ciclo de vida de la operación', () => {
     await service.startBackfill(1);
 
     expect(graphql.downloadBulkOperationResult).toHaveBeenCalledTimes(1);
+  });
+});
+
+/*
+ * Todo lo que se guarda del pedido sale de esta única consulta. Un campo que no
+ * viaje aquí sólo se puede rellenar reimportando el histórico entero, así que
+ * conviene que estén todos.
+ */
+describe('ShopifyBackfillService — datos que sólo llegan reimportando', () => {
+  let service: ShopifyBackfillService;
+  let graphql: any;
+  let orderSync: any;
+  let transactionSync: any;
+
+  beforeEach(async () => {
+    graphql = {
+      bulkOperationRunQuery: jest.fn(),
+      pollBulkOperation: jest.fn().mockResolvedValue({
+        status: 'COMPLETED',
+        url: 'https://storage.shopify.com/result.jsonl',
+      }),
+      downloadBulkOperationResult: jest.fn(),
+      registerWebhooks: jest.fn(),
+    };
+    orderSync = { handleOrderCreate: jest.fn() };
+    transactionSync = { handleTransactionCreate: jest.fn() };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ShopifyBackfillService,
+        { provide: ShopifyGraphQLService, useValue: graphql },
+        { provide: ShopifyOrderSyncService, useValue: orderSync },
+        { provide: ShopifyTransactionSyncService, useValue: transactionSync },
+      ],
+    }).compile();
+
+    service = module.get<ShopifyBackfillService>(ShopifyBackfillService);
+  });
+
+  const run = async (order: any, items: any[] = []) => {
+    graphql.downloadBulkOperationResult.mockResolvedValue(
+      toJsonl([order, ...items]),
+    );
+    await service.pollAndProcessBackfill(1, 'gid://shopify/BulkOperation/1');
+  };
+
+  const baseOrder = (overrides: any = {}) => ({
+    id: ORDER_GID,
+    name: '#1001',
+    createdAt: '2026-03-01T09:58:00Z',
+    totalPriceSet: { shopMoney: { amount: '598.94' } },
+    totalDiscountsSet: { shopMoney: { amount: '10.00' } },
+    totalTaxSet: { shopMoney: { amount: '11.94' } },
+    totalShippingPriceSet: { shopMoney: { amount: '99.00' } },
+    transactions: [],
+    ...overrides,
+  });
+
+  const sale = (overrides: any = {}) => ({
+    id: 'gid://shopify/OrderTransaction/801038806',
+    kind: 'SALE',
+    status: 'SUCCESS',
+    gateway: 'cash',
+    processedAt: '2026-03-01T10:00:00Z',
+    amountSet: { shopMoney: { amount: '598.94' } },
+    ...overrides,
+  });
+
+  it('trae el envío y la cancelación del pedido', async () => {
+    await run(baseOrder({ cancelledAt: '2026-03-02T08:00:00Z' }));
+
+    const [, payload] = orderSync.handleOrderCreate.mock.calls[0];
+    expect(payload.total_shipping).toBe('99.00');
+    expect(payload.cancelled_at).toBe('2026-03-02T08:00:00Z');
+  });
+
+  it('trae el costo y la categoría dentro del propio bulk', async () => {
+    await run(baseOrder(), [
+      {
+        id: 'gid://shopify/LineItem/466157049',
+        __parentId: ORDER_GID,
+        title: 'Camiseta',
+        quantity: 1,
+        product: {
+          id: 'gid://shopify/Product/1',
+          productType: 'Pokemon',
+          tags: ['tcg'],
+        },
+        variant: {
+          id: 'gid://shopify/ProductVariant/2',
+          inventoryItem: { unitCost: { amount: '40.50' } },
+        },
+        originalUnitPriceSet: { shopMoney: { amount: '199.00' } },
+      },
+    ]);
+
+    const [, payload] = orderSync.handleOrderCreate.mock.calls[0];
+    expect(payload.line_items[0]).toMatchObject({
+      product_type: 'Pokemon',
+      tags: ['tcg'],
+      unit_cost: 40.5,
+    });
+  });
+
+  /*
+   * Lo devuelto antes de la importación no llegaba nunca: los reembolsos sólo
+   * entraban por webhook.
+   */
+  it('descuenta del cobro lo que se reembolsó de él', async () => {
+    await run(
+      baseOrder({
+        transactions: [
+          sale(),
+          {
+            id: 'gid://shopify/OrderTransaction/801038900',
+            kind: 'REFUND',
+            status: 'SUCCESS',
+            gateway: 'cash',
+            processedAt: '2026-03-05T10:00:00Z',
+            amountSet: { shopMoney: { amount: '98.94' } },
+            parentTransaction: {
+              id: 'gid://shopify/OrderTransaction/801038806',
+            },
+          },
+        ],
+      }),
+    );
+
+    const [, txn] = transactionSync.handleTransactionCreate.mock.calls[0];
+    expect(txn.amount).toBe('500.00');
+  });
+
+  /* Reimportar no puede volver a restar: el neto se recalcula, no se decrementa. */
+  it('da el mismo importe se importe una vez o dos', async () => {
+    const order = baseOrder({
+      transactions: [
+        sale(),
+        {
+          id: 'gid://shopify/OrderTransaction/801038900',
+          kind: 'REFUND',
+          status: 'SUCCESS',
+          amountSet: { shopMoney: { amount: '98.94' } },
+          parentTransaction: { id: 'gid://shopify/OrderTransaction/801038806' },
+        },
+      ],
+    });
+
+    await run(order);
+    await run(order);
+
+    const amounts = transactionSync.handleTransactionCreate.mock.calls.map(
+      (c: any[]) => c[1].amount,
+    );
+    expect(amounts).toEqual(['500.00', '500.00']);
+  });
+
+  it('no crea ingreso si la venta se devolvió entera', async () => {
+    await run(
+      baseOrder({
+        transactions: [
+          sale(),
+          {
+            id: 'gid://shopify/OrderTransaction/801038900',
+            kind: 'REFUND',
+            status: 'SUCCESS',
+            amountSet: { shopMoney: { amount: '598.94' } },
+            parentTransaction: {
+              id: 'gid://shopify/OrderTransaction/801038806',
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(transactionSync.handleTransactionCreate).not.toHaveBeenCalled();
+  });
+
+  it('ignora las transacciones de prueba de la pasarela', async () => {
+    await run(baseOrder({ transactions: [sale({ test: true })] }));
+
+    expect(transactionSync.handleTransactionCreate).not.toHaveBeenCalled();
   });
 });

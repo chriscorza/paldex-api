@@ -53,6 +53,14 @@ export class ShopifyOrderSyncService {
     const shopifyOrderTotal = parseFloat(orderPayload.total_price || 0);
     const discountTotal = parseFloat(orderPayload.total_discounts || 0);
     const taxTotal = parseFloat(orderPayload.total_tax || 0);
+    const orderDate = this.parseOrderDate(orderPayload.created_at);
+    const cancelledAt = this.parseOrderDate(orderPayload.cancelled_at) ?? null;
+    /* El webhook REST manda el MoneyBag; el backfill ya lo trae desenvuelto. */
+    const shippingTotal = parseFloat(
+      orderPayload.total_shipping ??
+        orderPayload.total_shipping_price_set?.shop_money?.amount ??
+        0,
+    );
 
     try {
       await this.prisma.shopifyOrder.upsert({
@@ -70,10 +78,13 @@ export class ShopifyOrderSyncService {
           shopify_order_total: shopifyOrderTotal,
           discount_total: discountTotal,
           tax_total: taxTotal,
+          shipping_total: Number.isFinite(shippingTotal) ? shippingTotal : 0,
+          cancelled_at: cancelledAt,
           cost_total: 0,
           profit_total: 0,
           has_missing_cost_data: false,
           line_items: enrichedItems,
+          created_at: orderDate,
         },
         update: {
           order_number: orderNumber,
@@ -81,7 +92,10 @@ export class ShopifyOrderSyncService {
           shopify_order_total: shopifyOrderTotal,
           discount_total: discountTotal,
           tax_total: taxTotal,
+          shipping_total: Number.isFinite(shippingTotal) ? shippingTotal : 0,
+          cancelled_at: cancelledAt,
           line_items: enrichedItems,
+          created_at: orderDate,
         },
       });
 
@@ -113,6 +127,15 @@ export class ShopifyOrderSyncService {
             data: { shopify_order_id: dbOrder.id },
           });
         }
+
+        /*
+         * Estos ingresos acaban de engancharse al pedido, después de que
+         * `projectOrder` repartiera el costo, así que se reparte otra vez para
+         * que también les toque.
+         */
+        if (orphanIncomes.length > 0) {
+          await this.projection.propagateToIncomes(dbOrder.id);
+        }
       }
     } catch (err: any) {
       if (err?.code === 'P2002') {
@@ -127,31 +150,60 @@ export class ShopifyOrderSyncService {
     }
   }
 
+  /*
+   * `created_at` es la fecha del pedido en Shopify, no la de importación. Sin
+   * ella el `@default(now())` del modelo fecha todo el histórico el día del
+   * backfill, y como los reportes de rentabilidad y `recalculateCosts` filtran
+   * por esa columna, el periodo real de las ventas queda vacío.
+   *
+   * Devuelve `undefined` —no `null`— cuando no viene o no es una fecha válida:
+   * en `create` deja actuar al default y en `update` no toca la columna.
+   */
+  private parseOrderDate(raw: any): Date | undefined {
+    if (!raw) return undefined;
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  }
+
   private async enrichLineItems(
     connectionId: number,
     lineItems: any[],
   ): Promise<any[]> {
-    const variantIds = lineItems
-      .map((li: any) => li.variant_id)
-      .filter((id: any) => id);
+    /*
+     * El backfill ya trae costo, tipo de producto y etiquetas dentro de la
+     * operación bulk, así que aquí sólo queda preguntar por lo que falta: el
+     * camino del webhook —que llega crudo del REST— y los productos sin
+     * `productType`, únicos donde las colecciones deciden la categoría.
+     *
+     * Antes se preguntaba por todos los pedidos siempre: una llamada por pedido,
+     * miles en una importación, y un throttle de Shopify dejaba ese pedido sin
+     * costo y sin categoría con sólo un warn.
+     */
+    const pending = lineItems.filter(
+      (li: any) =>
+        li.variant_id &&
+        (li.unit_cost === undefined ||
+          (!li.product_type && li.collections === undefined)),
+    );
 
-    if (variantIds.length === 0) return lineItems;
+    let enrichedData = new Map<string, any>();
 
-    let enrichedData: Map<string, any>;
-    try {
-      enrichedData = await this.fetchLineItemEnrichment(
-        connectionId,
-        variantIds,
-      );
-    } catch (err) {
-      this.logger.warn(
-        `Failed to fetch enrichment data for connection ${connectionId}, proceeding without`,
-      );
-      enrichedData = new Map();
+    if (pending.length > 0) {
+      const variantIds = pending.map((li: any) => String(li.variant_id));
+      try {
+        enrichedData = await this.fetchWithRetry(connectionId, variantIds);
+      } catch {
+        this.logger.warn(
+          `Failed to fetch enrichment data for connection ${connectionId}, proceeding without`,
+        );
+      }
     }
 
     return lineItems.map((li: any) => {
       const enrichment = enrichedData.get(String(li.variant_id)) || {};
+
+      /* Lo consultado gana, pero nunca borra lo que ya venía del bulk. */
+      const pick = (key: string) => enrichment[key] ?? li[key] ?? null;
 
       return {
         id: li.id,
@@ -163,14 +215,41 @@ export class ShopifyOrderSyncService {
         name: li.name,
         quantity: li.quantity,
         price: li.price,
+        vendor: li.vendor ?? null,
         discount_allocations: li.discount_allocations || [],
         tax_lines: li.tax_lines || [],
-        product_type: enrichment.product_type || null,
-        collections: enrichment.collections || null,
-        tags: enrichment.tags || null,
-        unit_cost: enrichment.unit_cost || null,
+        product_type: pick('product_type'),
+        collections: pick('collections'),
+        tags: pick('tags'),
+        unit_cost: pick('unit_cost'),
       };
     });
+  }
+
+  /*
+   * Shopify responde THROTTLED cuando se le pide de más, y en una importación
+   * grande eso llega en rachas. Sin reintento, cada respuesta así era un pedido
+   * sin costo que sólo se podía arreglar reimportando entero.
+   */
+  private async fetchWithRetry(
+    connectionId: number,
+    variantIds: string[],
+    attempts = 3,
+  ): Promise<Map<string, any>> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.fetchLineItemEnrichment(connectionId, variantIds);
+      } catch (err: any) {
+        const throttled = /throttl/i.test(String(err?.message));
+        if (!throttled || attempt >= attempts) throw err;
+
+        const waitMs = 2000 * attempt;
+        this.logger.warn(
+          `Throttled by Shopify on connection ${connectionId}, retrying in ${waitMs}ms (${attempt}/${attempts - 1})`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+    }
   }
 
   private async fetchLineItemEnrichment(

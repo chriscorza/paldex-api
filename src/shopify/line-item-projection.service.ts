@@ -54,9 +54,26 @@ export class LineItemProjectionService {
       const quantity = parseInt(String(li.quantity) || '1', 10) || 0;
       const unitPrice = new Decimal(li.price || 0);
       const grossSales = unitPrice.times(quantity);
-      const discountAllocated = new Decimal(0);
+
+      /*
+       * Los descuentos y los impuestos vienen en el propio artículo —tanto del
+       * webhook como del backfill, que los traduce a la forma REST— y ya están
+       * calculados para toda la cantidad, no por unidad. Antes se guardaban en
+       * cero a pelo, así que `net_sales` era en realidad el bruto y los
+       * márgenes por categoría salían inflados por el total de descuentos.
+       */
+      const discountAllocated = this.sumAmounts(
+        li.discount_allocations,
+        'amount',
+      );
+      const taxAllocated = this.sumAmounts(li.tax_lines, 'price');
+
+      /*
+       * El impuesto no se resta: `net_sales` es bruto menos descuentos, la
+       * misma definición que usa Shopify en sus reportes. `tax_allocated` se
+       * guarda aparte para poder cuadrar contra el pedido.
+       */
       const netSales = grossSales.minus(discountAllocated);
-      const taxAllocated = new Decimal(0);
 
       const frozenCost = li.cost
         ? Number(li.cost)
@@ -255,48 +272,144 @@ export class LineItemProjectionService {
     });
   }
 
-  private async propagateToIncomes(orderId: number) {
+  /*
+   * Pública a propósito: en el backfill —y también con los webhooks— el pedido
+   * se proyecta antes de que existan sus transacciones, así que aquí todavía no
+   * hay ningún income al que colgarle el costo. Quien crea el income
+   * (`ShopifyTransactionSyncService`) vuelve a llamar a este método para cerrar
+   * el círculo. Sin esa segunda llamada, los ingresos de Shopify se quedaban con
+   * `cogs_total` en NULL para siempre.
+   */
+  async propagateToIncomes(orderId: number) {
     const incomes = await this.prisma.income.findMany({
       where: { shopify_order_id: orderId },
       select: { id: true, net_amount: true },
+      orderBy: { id: 'asc' },
     });
+
+    if (incomes.length === 0) return;
 
     const cogsAgg = await this.prisma.shopifyLineItem.aggregate({
       where: { shopify_order_id: orderId },
       _sum: { total_cost: true },
     });
 
-    const profitAgg = await this.prisma.shopifyLineItem.aggregate({
-      where: { shopify_order_id: orderId },
-      _sum: { gross_profit: true },
+    const cogsTotal = cogsAgg._sum.total_cost;
+
+    /* Pedido sin ningún costo conocido: se limpia lo que hubiera de antes. */
+    if (cogsTotal === null || cogsTotal === undefined) {
+      for (const income of incomes) {
+        await this.prisma.income.update({
+          where: { id: income.id },
+          data: { cogs_total: null, profit_gross: null },
+        });
+        await this.prisma.costOfGoodsSold.deleteMany({
+          where: { income_id: income.id, source: 'SHOPIFY' },
+        });
+      }
+      return;
+    }
+
+    const order = await this.prisma.shopifyOrder.findUnique({
+      where: { id: orderId },
+      select: { order_number: true },
     });
 
-    const cogsTotal = cogsAgg._sum.total_cost;
-    const profitGross = profitAgg._sum.gross_profit;
+    const shares = this.splitCostByNetAmount(new Decimal(cogsTotal), incomes);
 
-    for (const income of incomes) {
-      const cogsTotalNum = cogsTotal !== null ? Number(cogsTotal) : null;
-      let calculatedProfit: number | null = null;
-      if (cogsTotalNum !== null && income.net_amount !== null) {
-        calculatedProfit = new Decimal(income.net_amount)
-          .minus(new Decimal(cogsTotalNum))
-          .toNumber();
-      }
-
-      const profitTotalNum =
-        profitGross !== null && profitGross !== undefined
-          ? Number(profitGross)
-          : undefined;
+    for (const [index, income] of incomes.entries()) {
+      const share = shares[index];
+      const profit =
+        income.net_amount !== null
+          ? new Decimal(income.net_amount).minus(share).toNumber()
+          : null;
 
       await this.prisma.income.update({
         where: { id: income.id },
-        data: {
-          cogs_total: cogsTotalNum,
-          profit_gross:
-            profitTotalNum !== undefined ? profitTotalNum : calculatedProfit,
-        },
+        data: { cogs_total: share.toNumber(), profit_gross: profit },
       });
+
+      /*
+       * El P&L mensual toma el COGS de `CostOfGoodsSold`, no de
+       * `income.cogs_total` (ver la regla de no-duplicación en CLAUDE.md), así
+       * que la venta de Shopify tiene que materializar su fila. Se reescribe en
+       * cada proyección —borrando sólo las de origen SHOPIFY— para que
+       * reimportar no duplique el costo ni pise las filas manuales.
+       *
+       * Es una fila agregada por income, no una por artículo: con un pago
+       * partido el costo va a prorrata y ya no hay forma de repartir cada
+       * artículo entre las transacciones sin inventarse la asignación.
+       */
+      await this.prisma.costOfGoodsSold.deleteMany({
+        where: { income_id: income.id, source: 'SHOPIFY' },
+      });
+
+      if (!share.isZero()) {
+        await this.prisma.costOfGoodsSold.create({
+          data: {
+            income_id: income.id,
+            product_reference:
+              order?.order_number != null
+                ? `Shopify #${order.order_number}`
+                : null,
+            quantity: 1,
+            unit_cost: share.toNumber(),
+            total_cost: share.toNumber(),
+            source: 'SHOPIFY',
+          },
+        });
+      }
     }
+  }
+
+  /*
+   * Un pedido cobrado en varias transacciones crea un income por cada una. El
+   * costo se reparte a prorrata del neto de cada uno; darle el total del pedido
+   * a cada income —lo que se hacía antes— multiplicaba el COGS por el número de
+   * pagos. El resto de los centavos va al último para que la suma cuadre exacta
+   * con el costo del pedido.
+   */
+  private splitCostByNetAmount(
+    total: Decimal,
+    incomes: { net_amount: unknown }[],
+  ): Decimal[] {
+    const nets = incomes.map((i) => new Decimal((i.net_amount ?? 0) as any));
+    const netTotal = nets.reduce((sum, n) => sum.plus(n), new Decimal(0));
+
+    const shares: Decimal[] = [];
+    let assigned = new Decimal(0);
+
+    for (let i = 0; i < incomes.length; i++) {
+      if (i === incomes.length - 1) {
+        shares.push(total.minus(assigned));
+        break;
+      }
+      const share = netTotal.isZero()
+        ? total.dividedBy(incomes.length).toDP(2)
+        : total.times(nets[i]).dividedBy(netTotal).toDP(2);
+      shares.push(share);
+      assigned = assigned.plus(share);
+    }
+
+    return shares;
+  }
+
+  /*
+   * Suma una lista de importes de Shopify tolerando que no venga, que venga
+   * vacía o que traiga entradas sin el campo: un artículo sin descuento no debe
+   * romper la proyección del pedido entero.
+   */
+  private sumAmounts(list: any, key: string): Decimal {
+    if (!Array.isArray(list)) return new Decimal(0);
+
+    return list.reduce((sum: Decimal, entry: any) => {
+      const raw = entry?.[key];
+      /* `new Decimal('lo que sea')` lanza; se valida antes de construirlo. */
+      if (raw === undefined || raw === null || !Number.isFinite(Number(raw))) {
+        return sum;
+      }
+      return sum.plus(new Decimal(raw));
+    }, new Decimal(0));
   }
 
   private parseLineItems(lineItems: any): any[] {
