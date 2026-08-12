@@ -37,7 +37,16 @@ export class PayrollService {
 
   async generate(ctx: OwnershipContext, dto: GeneratePayrollDto) {
     const employees = await this.prisma.employee.findMany({
-      where: { ...buildOwnerFilter(ctx), active: true },
+      /*
+       * Los que ya no laboran entran si tienen fecha de baja: hace falta para
+       * cargar su histórico, y no hay riesgo de generarles de más porque
+       * `ended_at` corta los periodos posteriores. Un inactivo sin fecha de
+       * baja sí queda fuera: nada lo acotaría.
+       */
+      where: {
+        ...buildOwnerFilter(ctx),
+        OR: [{ active: true }, { ended_at: { not: null } }],
+      },
     });
 
     const rangeStart = new Date(dto.start_date);

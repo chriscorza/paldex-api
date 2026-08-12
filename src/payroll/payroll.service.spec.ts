@@ -404,3 +404,39 @@ describe('PayrollService — carga de histórico', () => {
     expect(result.paid).toBe(0);
   });
 });
+
+/*
+ * Cargar la nómina de alguien que ya no trabaja aquí. Filtrar sólo por
+ * `active: true` obligaba a marcarlo como activo —mentir sobre su estado— para
+ * poder registrar lo que se le pagó.
+ */
+describe('PayrollService — ex-empleados', () => {
+  let service: PayrollService;
+  let prisma: any;
+
+  beforeEach(async () => {
+    prisma = {
+      employee: { findMany: jest.fn().mockResolvedValue([]) },
+      payrollPayment: { create: jest.fn() },
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [PayrollService, { provide: PrismaService, useValue: prisma }],
+    }).compile();
+
+    service = module.get<PayrollService>(PayrollService);
+  });
+
+  it('incluye a quien tiene fecha de baja aunque esté inactivo', async () => {
+    await service.generate(
+      { userId: 1, scope: 'OWN' } as any,
+      {
+        start_date: '2026-01-01',
+        end_date: '2026-04-30',
+      } as any,
+    );
+
+    const { where } = prisma.employee.findMany.mock.calls[0][0];
+    expect(where.OR).toEqual([{ active: true }, { ended_at: { not: null } }]);
+  });
+});
