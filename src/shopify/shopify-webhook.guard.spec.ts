@@ -15,7 +15,11 @@ describe('ShopifyWebhookGuard', () => {
     process.env = originalEnv;
   });
 
-  function createRequest(rawBody: string, hmacHeader?: string, rawBodyBuffer?: Buffer) {
+  function createRequest(
+    rawBody: string,
+    hmacHeader?: string,
+    rawBodyBuffer?: Buffer,
+  ) {
     const body = rawBodyBuffer || Buffer.from(rawBody);
     return {
       headers: {
@@ -46,16 +50,16 @@ describe('ShopifyWebhookGuard', () => {
     const body = '{"test": "data"}';
     const request = createRequest(body, 'invalid-hmac');
 
-    expect(() =>
-      guard.canActivate(createMockContext(request)),
-    ).toThrow(UnauthorizedException);
+    expect(() => guard.canActivate(createMockContext(request))).toThrow(
+      UnauthorizedException,
+    );
   });
 
   it('should reject when HMAC header is missing', () => {
     const request = createRequest('{}', undefined);
-    expect(() =>
-      guard.canActivate(createMockContext(request)),
-    ).toThrow(UnauthorizedException);
+    expect(() => guard.canActivate(createMockContext(request))).toThrow(
+      UnauthorizedException,
+    );
   });
 
   it('should reject when body is altered after signing', () => {
@@ -67,18 +71,18 @@ describe('ShopifyWebhookGuard', () => {
     const alteredBody = '{"test": "tampered"}';
     const request = createRequest(alteredBody, hmac);
 
-    expect(() =>
-      guard.canActivate(createMockContext(request)),
-    ).toThrow(UnauthorizedException);
+    expect(() => guard.canActivate(createMockContext(request))).toThrow(
+      UnauthorizedException,
+    );
   });
 
   it('should reject when rawBody is missing', () => {
     const request = {
       headers: { 'x-shopify-hmac-sha256': 'some-hmac' },
     };
-    expect(() =>
-      guard.canActivate(createMockContext(request)),
-    ).toThrow(UnauthorizedException);
+    expect(() => guard.canActivate(createMockContext(request))).toThrow(
+      UnauthorizedException,
+    );
   });
 
   it('should reject when SHOPIFY_API_SECRET is not set', () => {
@@ -86,9 +90,9 @@ describe('ShopifyWebhookGuard', () => {
 
     const body = '{"test": "data"}';
     const request = createRequest(body, 'any-hmac');
-    expect(() =>
-      guard.canActivate(createMockContext(request)),
-    ).toThrow(UnauthorizedException);
+    expect(() => guard.canActivate(createMockContext(request))).toThrow(
+      UnauthorizedException,
+    );
   });
 
   it('should set shopifyShopDomain on the request', () => {

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ShopifyGraphQLService } from './shopify-graphql.service';
 import { ShopifyOrderSyncService } from './shopify-order-sync.service';
 import { ShopifyTransactionSyncService } from './shopify-transaction-sync.service';
@@ -149,10 +149,26 @@ export class ShopifyBackfillService {
   }
 
   private async launchBulkOperation(connectionId: number): Promise<string> {
-    const result = await this.graphql.bulkOperationRunQuery(
-      connectionId,
-      BULK_ORDERS_QUERY,
-    );
+    let result: { bulkOperation: { id: string; status: string } };
+
+    try {
+      result = await this.graphql.bulkOperationRunQuery(
+        connectionId,
+        BULK_ORDERS_QUERY,
+      );
+    } catch (err: any) {
+      /*
+       * Shopify sólo admite una Bulk Operation por tienda a la vez. Sin este
+       * caso, pulsar el botón dos veces —o hacerlo mientras corre el backfill
+       * del alta— devuelve un 500 genérico en vez de decir qué pasa.
+       */
+      if (/already in progress/i.test(String(err?.message))) {
+        throw new ConflictException(
+          'A bulk operation is already running for this shop',
+        );
+      }
+      throw err;
+    }
 
     const operationId = result.bulkOperation.id;
     this.logger.log(
@@ -212,10 +228,7 @@ export class ShopifyBackfillService {
         `Bulk processing complete: ${processed} orders, ${errors} errors`,
       );
     } catch (err) {
-      this.logger.error(
-        `Failed to process bulk operation ${operationId}`,
-        err,
-      );
+      this.logger.error(`Failed to process bulk operation ${operationId}`, err);
     }
 
     return { processed, errors };

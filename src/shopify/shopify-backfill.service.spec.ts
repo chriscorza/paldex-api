@@ -64,7 +64,8 @@ const lineItemLine = {
   ],
 };
 
-const toJsonl = (nodes: any[]) => nodes.map((n) => JSON.stringify(n)).join('\n');
+const toJsonl = (nodes: any[]) =>
+  nodes.map((n) => JSON.stringify(n)).join('\n');
 
 describe('ShopifyBackfillService — procesamiento del JSONL', () => {
   let service: ShopifyBackfillService;
@@ -193,7 +194,11 @@ describe('ShopifyBackfillService — procesamiento del JSONL', () => {
   });
 
   it('sigue con el resto de pedidos si uno falla', async () => {
-    const second = { ...orderLine, id: 'gid://shopify/Order/450789470', name: '#1002' };
+    const second = {
+      ...orderLine,
+      id: 'gid://shopify/Order/450789470',
+      name: '#1002',
+    };
     orderSync.handleOrderCreate.mockRejectedValueOnce(new Error('boom'));
 
     const result = await runWith(toJsonl([orderLine, lineItemLine, second]));
@@ -217,7 +222,10 @@ describe('ShopifyBackfillService — ciclo de vida de la operación', () => {
   beforeEach(async () => {
     graphql = {
       bulkOperationRunQuery: jest.fn().mockResolvedValue({
-        bulkOperation: { id: 'gid://shopify/BulkOperation/1', status: 'CREATED' },
+        bulkOperation: {
+          id: 'gid://shopify/BulkOperation/1',
+          status: 'CREATED',
+        },
       }),
       pollBulkOperation: jest.fn(),
       downloadBulkOperationResult: jest.fn().mockResolvedValue(''),
@@ -228,7 +236,10 @@ describe('ShopifyBackfillService — ciclo de vida de la operación', () => {
       providers: [
         ShopifyBackfillService,
         { provide: ShopifyGraphQLService, useValue: graphql },
-        { provide: ShopifyOrderSyncService, useValue: { handleOrderCreate: jest.fn() } },
+        {
+          provide: ShopifyOrderSyncService,
+          useValue: { handleOrderCreate: jest.fn() },
+        },
         {
           provide: ShopifyTransactionSyncService,
           useValue: { handleTransactionCreate: jest.fn() },
@@ -247,7 +258,10 @@ describe('ShopifyBackfillService — ciclo de vida de la operación', () => {
     graphql.pollBulkOperation
       .mockResolvedValueOnce({ status: 'CREATED', url: null })
       .mockResolvedValueOnce({ status: 'RUNNING', url: null })
-      .mockResolvedValueOnce({ status: 'COMPLETED', url: 'https://x/result.jsonl' });
+      .mockResolvedValueOnce({
+        status: 'COMPLETED',
+        url: 'https://x/result.jsonl',
+      });
 
     await service.pollAndProcessBackfill(1, 'gid://shopify/BulkOperation/1');
 
@@ -256,7 +270,10 @@ describe('ShopifyBackfillService — ciclo de vida de la operación', () => {
   });
 
   it('no descarga nada si la operación falla', async () => {
-    graphql.pollBulkOperation.mockResolvedValue({ status: 'FAILED', url: null });
+    graphql.pollBulkOperation.mockResolvedValue({
+      status: 'FAILED',
+      url: null,
+    });
 
     const result = await service.pollAndProcessBackfill(1, 'op');
 
@@ -265,7 +282,10 @@ describe('ShopifyBackfillService — ciclo de vida de la operación', () => {
   });
 
   it('trata COMPLETED sin url como tienda sin pedidos, no como error', async () => {
-    graphql.pollBulkOperation.mockResolvedValue({ status: 'COMPLETED', url: null });
+    graphql.pollBulkOperation.mockResolvedValue({
+      status: 'COMPLETED',
+      url: null,
+    });
 
     const result = await service.pollAndProcessBackfill(1, 'op');
 
@@ -287,6 +307,29 @@ describe('ShopifyBackfillService — ciclo de vida de la operación', () => {
     expect(graphql.bulkOperationRunQuery).toHaveBeenCalledTimes(1);
 
     resolvePoll({ status: 'FAILED', url: null });
+  });
+
+  it('traduce «operación ya en curso» a un 409, no a un 500', async () => {
+    graphql.bulkOperationRunQuery.mockRejectedValue(
+      new Error(
+        'Bulk operation error: A bulk query operation for this app and shop ' +
+          'is already in progress: gid://shopify/BulkOperation/9.',
+      ),
+    );
+
+    await expect(service.triggerBackfillEndpoint(1)).rejects.toMatchObject({
+      status: 409,
+    });
+  });
+
+  it('no disfraza el resto de errores de Shopify', async () => {
+    graphql.bulkOperationRunQuery.mockRejectedValue(
+      new Error('Bulk operation error: Invalid bulk query'),
+    );
+
+    await expect(service.triggerBackfillEndpoint(1)).rejects.toThrow(
+      /Invalid bulk query/,
+    );
   });
 
   it('el alta de tienda sí procesa el resultado del backfill', async () => {

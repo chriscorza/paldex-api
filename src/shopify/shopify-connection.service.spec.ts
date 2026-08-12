@@ -63,9 +63,7 @@ describe('ShopifyConnectionService — gateway accounts', () => {
 
       const accountId = await service.resolveAccountForGateway(1, 'cash');
       expect(accountId).toBe(5);
-      expect(
-        prisma.shopifyGatewayAccount.findUnique,
-      ).toHaveBeenCalledWith({
+      expect(prisma.shopifyGatewayAccount.findUnique).toHaveBeenCalledWith({
         where: {
           shopify_connection_id_gateway: {
             shopify_connection_id: 1,
@@ -82,7 +80,10 @@ describe('ShopifyConnectionService — gateway accounts', () => {
         account_id: 3,
       });
 
-      const accountId = await service.resolveAccountForGateway(1, 'new_gateway');
+      const accountId = await service.resolveAccountForGateway(
+        1,
+        'new_gateway',
+      );
       expect(accountId).toBe(3);
     });
 
@@ -126,9 +127,9 @@ describe('ShopifyConnectionService — gateway accounts', () => {
     it('should throw NotFoundException for connection not owned by user', async () => {
       prisma.shopifyConnection.findFirst.mockResolvedValue(null);
 
-      await expect(
-        service.getGatewayAccounts(10, 999),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.getGatewayAccounts(10, 999)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -182,9 +183,7 @@ describe('ShopifyConnectionService — gateway accounts', () => {
       });
 
       expect(result.mappings).toHaveLength(1);
-      expect(
-        prisma.shopifyGatewayAccount.deleteMany,
-      ).toHaveBeenCalledWith({
+      expect(prisma.shopifyGatewayAccount.deleteMany).toHaveBeenCalledWith({
         where: { shopify_connection_id: 1 },
       });
     });

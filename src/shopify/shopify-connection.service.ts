@@ -174,10 +174,7 @@ export class ShopifyConnectionService {
       const callbackUrl =
         process.env.SHOPIFY_CALLBACK_URL ||
         'http://localhost:3000/shopify/oauth/callback';
-      const webhookBaseUrl = callbackUrl.replace(
-        '/shopify/oauth/callback',
-        '',
-      );
+      const webhookBaseUrl = callbackUrl.replace('/shopify/oauth/callback', '');
 
       const conn = await this.prisma.shopifyConnection.findUnique({
         where: { shop_domain: shop },
@@ -186,7 +183,10 @@ export class ShopifyConnectionService {
 
       if (conn) {
         this.backfillService
-          .registerWebhooksAndBackfill(conn.id, `${webhookBaseUrl}/shopify/webhooks`)
+          .registerWebhooksAndBackfill(
+            conn.id,
+            `${webhookBaseUrl}/shopify/webhooks`,
+          )
           .catch((err) => {
             console.error('Failed to setup webhooks/backfill:', err);
           });
@@ -343,10 +343,7 @@ export class ShopifyConnectionService {
     return conn?.account_id ?? null;
   }
 
-  async verifyConnectionOwnership(
-    userId: number,
-    connectionId: number,
-  ) {
+  async verifyConnectionOwnership(userId: number, connectionId: number) {
     const conn = await this.prisma.shopifyConnection.findFirst({
       where: { id: connectionId, user_id: userId },
       select: { id: true, user_id: true },

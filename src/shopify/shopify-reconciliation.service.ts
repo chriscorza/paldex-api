@@ -17,11 +17,10 @@ export class ShopifyReconciliationService {
     connections: number;
     discrepancies: number;
   }> {
-    const activeConnections =
-      await this.prisma.shopifyConnection.findMany({
-        where: { status: 'ACTIVE' },
-        select: { id: true, last_synced_at: true },
-      });
+    const activeConnections = await this.prisma.shopifyConnection.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, last_synced_at: true },
+    });
 
     let totalDiscrepancies = 0;
 
@@ -49,9 +48,7 @@ export class ShopifyReconciliationService {
     };
   }
 
-  private async reconcileConnection(
-    connectionId: number,
-  ): Promise<number> {
+  private async reconcileConnection(connectionId: number): Promise<number> {
     const conn = await this.prisma.shopifyConnection.findUnique({
       where: { id: connectionId },
       select: { last_synced_at: true },
@@ -60,9 +57,7 @@ export class ShopifyReconciliationService {
     if (!conn) return 0;
 
     const fromDate = conn.last_synced_at
-      ? new Date(
-          conn.last_synced_at.getTime() - 24 * 60 * 60 * 1000,
-        )
+      ? new Date(conn.last_synced_at.getTime() - 24 * 60 * 60 * 1000)
       : new Date(Date.now() - 48 * 60 * 60 * 1000);
 
     const fromDateIso = fromDate.toISOString();
@@ -133,21 +128,16 @@ export class ShopifyReconciliationService {
             discrepancies++;
 
             try {
-              await this.transactionSync.handleTransactionCreate(
-                connectionId,
-                {
-                  id: txn.id,
-                  kind: txn.kind,
-                  status: txn.status,
-                  amount: txn.amountSet?.shopMoney?.amount || '0',
-                  gateway: txn.gateway,
-                  processed_at: txn.processedAt,
-                  order_id: order.legacyResourceId,
-                },
-              );
-              this.logger.log(
-                `Backfilled income for transaction ${txn.id}`,
-              );
+              await this.transactionSync.handleTransactionCreate(connectionId, {
+                id: txn.id,
+                kind: txn.kind,
+                status: txn.status,
+                amount: txn.amountSet?.shopMoney?.amount || '0',
+                gateway: txn.gateway,
+                processed_at: txn.processedAt,
+                order_id: order.legacyResourceId,
+              });
+              this.logger.log(`Backfilled income for transaction ${txn.id}`);
             } catch (err) {
               this.logger.error(
                 `Failed to backfill income for transaction ${txn.id}`,

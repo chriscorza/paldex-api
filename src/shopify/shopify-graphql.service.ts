@@ -152,9 +152,7 @@ export class ShopifyGraphQLService {
     const data = json?.data?.bulkOperationRunQuery;
 
     if (data?.userErrors?.length > 0) {
-      throw new Error(
-        `Bulk operation error: ${data.userErrors[0].message}`,
-      );
+      throw new Error(`Bulk operation error: ${data.userErrors[0].message}`);
     }
 
     return data;

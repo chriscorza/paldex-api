@@ -40,7 +40,8 @@ export class ShopifyConnectionController {
     private readonly shopifyService: ShopifyConnectionService,
     private readonly backfillService: ShopifyBackfillService,
     private readonly reconciliationService: ShopifyReconciliationService,
-  ) {}  @Post('connections/install')
+  ) {}
+  @Post('connections/install')
   @RequirePermissions('shopify_connection:create')
   @ApiOperation({
     summary: 'Paso 1: obtener la URL de autorización de Shopify',
@@ -93,7 +94,8 @@ export class ShopifyConnectionController {
   @RequirePermissions('shopify_connection:read')
   @ApiOperation({
     summary: 'Obtener el mapeo gateway → cuenta de una conexión',
-    description: 'Devuelve los mapeos guardados y los gateways vistos en transacciones sincronizadas, ' +
+    description:
+      'Devuelve los mapeos guardados y los gateways vistos en transacciones sincronizadas, ' +
       'para que el usuario sepa qué gateways existen sin tener que adivinarlos.',
   })
   getGatewayAccounts(
@@ -107,7 +109,8 @@ export class ShopifyConnectionController {
   @RequirePermissions('shopify_connection:update')
   @ApiOperation({
     summary: 'Configurar el mapeo gateway → cuenta de una conexión',
-    description: 'Recibe el mapeo completo como array de { gateway, account_id }. ' +
+    description:
+      'Recibe el mapeo completo como array de { gateway, account_id }. ' +
       'Reemplaza todo el mapeo existente. Cada cuenta debe pertenecer al dueño de la conexión. ' +
       'Los gateways no pueden repetirse. Cambiar un mapeo no reasigna incomes ya creados.',
   })
@@ -123,7 +126,8 @@ export class ShopifyConnectionController {
   @RequirePermissions('shopify_connection:update')
   @ApiOperation({
     summary: 'Lanzar backfill manual de pedidos históricos',
-    description: 'Dispara una Bulk Operation de Shopify para importar el histórico de pedidos. ' +
+    description:
+      'Dispara una Bulk Operation de Shopify para importar el histórico de pedidos. ' +
       'Idempotente: no duplica transacciones ya sincronizadas. Útil después de obtener nuevos scopes.',
   })
   async triggerBackfill(
@@ -285,13 +289,10 @@ export class ShopifyWebhookController {
       return null;
     }
 
-    const conn =
-      await this.shopifyService.findActiveConnectionByDomain(domain);
+    const conn = await this.shopifyService.findActiveConnectionByDomain(domain);
 
     if (!conn || conn.status !== 'ACTIVE') {
-      this.logger.warn(
-        `No active connection for domain ${domain}`,
-      );
+      this.logger.warn(`No active connection for domain ${domain}`);
       return null;
     }
 

@@ -95,19 +95,14 @@ export class ShopifyTransactionSyncService {
       );
     } catch (err: any) {
       if (err?.code === 'P2002') {
-        this.logger.debug(
-          `Duplicate transaction ${transactionId}, skipped`,
-        );
+        this.logger.debug(`Duplicate transaction ${transactionId}, skipped`);
         return;
       }
       throw err;
     }
   }
 
-  async handleRefund(
-    connectionId: number,
-    payload: any,
-  ): Promise<void> {
+  async handleRefund(connectionId: number, payload: any): Promise<void> {
     const transactions: any[] = payload?.transactions || [];
 
     for (const txn of transactions) {

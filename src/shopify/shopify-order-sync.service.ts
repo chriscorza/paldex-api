@@ -45,7 +45,8 @@ export class ShopifyOrderSyncService {
     );
 
     const itemsTotal = (orderPayload.line_items || []).reduce(
-      (sum: number, li: any) => sum + (parseFloat(li.price) || 0) * (li.quantity || 0),
+      (sum: number, li: any) =>
+        sum + (parseFloat(li.price) || 0) * (li.quantity || 0),
       0,
     );
 
@@ -205,9 +206,7 @@ export class ShopifyOrderSyncService {
     `;
 
     const data: any = await this.graphql.graphql(connectionId, query, {
-      variantIds: variantIds.map(
-        (id) => `gid://shopify/ProductVariant/${id}`,
-      ),
+      variantIds: variantIds.map((id) => `gid://shopify/ProductVariant/${id}`),
     });
 
     const map = new Map<string, any>();
@@ -217,13 +216,11 @@ export class ShopifyOrderSyncService {
       const variantGid = node.id;
       const numericId = variantGid.replace('gid://shopify/ProductVariant/', '');
 
-      const unitCostAmount =
-        node?.inventoryItem?.unitCost?.amount;
+      const unitCostAmount = node?.inventoryItem?.unitCost?.amount;
 
       const collections =
-        node?.product?.collections?.edges?.map(
-          (e: any) => e?.node?.title,
-        ) || [];
+        node?.product?.collections?.edges?.map((e: any) => e?.node?.title) ||
+        [];
 
       map.set(numericId, {
         product_type: node?.product?.productType || null,

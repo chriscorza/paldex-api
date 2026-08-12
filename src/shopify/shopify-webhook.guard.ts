@@ -47,7 +47,8 @@ export class ShopifyWebhookGuard implements CanActivate {
       throw new UnauthorizedException('HMAC verification failed');
     }
 
-    request.shopifyShopDomain = request.headers['x-shopify-shop-domain'] || null;
+    request.shopifyShopDomain =
+      request.headers['x-shopify-shop-domain'] || null;
     return true;
   }
 }
