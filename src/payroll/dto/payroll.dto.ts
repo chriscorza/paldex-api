@@ -7,6 +7,7 @@ import {
   IsInt,
   Min,
   IsIn,
+  IsBoolean,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PayrollStatus } from '@prisma/client';
@@ -19,6 +20,19 @@ export class GeneratePayrollDto {
   @ApiProperty()
   @IsDateString()
   end_date: string;
+
+  /*
+   * Igual que en los gastos recurrentes: para dar de alta la nómina ya pagada
+   * de meses anteriores sin tener que liquidarla pago a pago. Los periodos que
+   * todavía no han vencido siguen naciendo en PENDING.
+   */
+  @ApiPropertyOptional({
+    description:
+      'Marca como pagados los periodos ya vencidos. Para cargar histórico.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  already_paid?: boolean;
 }
 
 export class CreatePayrollPaymentDto {

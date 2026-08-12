@@ -4,6 +4,7 @@ import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { OwnershipContext } from '../common/ownership';
 import { MonthlyCloseService } from './monthly-close.service';
+import { ListMonthlyCloseDto } from './dto/list-monthly-close.dto';
 
 @ApiTags('Monthly Close')
 @ApiBearerAuth()
@@ -13,7 +14,11 @@ export class MonthlyCloseController {
   constructor(private readonly service: MonthlyCloseService) {}
 
   @Get()
-  findAll(@CurrentUser() u: { id: number }, @Req() r: any, @Query() q: any) {
+  findAll(
+    @CurrentUser() u: { id: number },
+    @Req() r: any,
+    @Query() q: ListMonthlyCloseDto,
+  ) {
     return this.service.findAll(
       { userId: u.id, scope: r.permissionScope || 'OWN' },
       q,

@@ -133,4 +133,21 @@ export class GenerateRecurringDto {
   @ApiProperty()
   @IsDateString()
   end_date: string;
+
+  /*
+   * Para cargar historia: lo que ya venció y ya se pagó entra como PAID, con
+   * `paid_at` en su fecha de vencimiento. Sin esto habría que pagar a mano, uno
+   * por uno, cada gasto de cada mes que se quiera dar de alta hacia atrás — y
+   * en PENDING no cuentan en ningún reporte.
+   *
+   * Sólo afecta a los vencimientos ya pasados: los futuros siguen naciendo en
+   * PENDING aunque el rango los incluya.
+   */
+  @ApiPropertyOptional({
+    description:
+      'Marca como pagados los vencimientos ya pasados. Para cargar histórico.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  already_paid?: boolean;
 }

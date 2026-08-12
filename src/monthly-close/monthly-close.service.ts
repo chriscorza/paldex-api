@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma.service';
 import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
 import { monthRangeInZone } from '../common/timezone';
+import { ListMonthlyCloseDto } from './dto/list-monthly-close.dto';
 import { ReportsAggregationService } from '../reports/reports-aggregation.service';
 import { ProfitEngine } from '../reports/profit-engine.service';
 import { Prisma as PrismaClient } from '@prisma/client';
@@ -22,7 +23,7 @@ export class MonthlyCloseService {
     private engine: ProfitEngine,
   ) {}
 
-  async findAll(ctx: OwnershipContext, filters: any) {
+  async findAll(ctx: OwnershipContext, filters: ListMonthlyCloseDto) {
     const where: any = { ...buildOwnerFilter(ctx) };
     const page = filters.page || 1;
     const limit = filters.limit || 24;

@@ -313,3 +313,94 @@ describe('PayrollService', () => {
     });
   });
 });
+
+/*
+ * Cargar la nómina de meses pasados: sin esto habría que generar y luego
+ * liquidar pago a pago, y en PENDING no cuenta en el P&L —los reportes suman
+ * `paid_at` con `status: PAID`—.
+ */
+describe('PayrollService — carga de histórico', () => {
+  let service: PayrollService;
+  let prisma: any;
+
+  const empleado = {
+    id: 1,
+    name: 'Juan',
+    pay_frequency: 'MONTHLY',
+    base_salary: 30000,
+    monthly_pay_day: 15,
+    weekly_pay_day: null,
+    biweekly_first_day: null,
+    biweekly_second_day: null,
+    started_at: new Date('2026-01-01'),
+    ended_at: null,
+    active: true,
+    default_payment_account_id: null,
+  };
+
+  beforeEach(async () => {
+    prisma = {
+      employee: { findMany: jest.fn().mockResolvedValue([empleado]) },
+      payrollPayment: { create: jest.fn() },
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [PayrollService, { provide: PrismaService, useValue: prisma }],
+    }).compile();
+
+    service = module.get<PayrollService>(PayrollService);
+  });
+
+  const ctx = { userId: 1, scope: 'OWN' } as any;
+
+  it('deja pagados los periodos ya vencidos', async () => {
+    const result = await service.generate(ctx, {
+      start_date: '2026-02-01',
+      end_date: '2026-04-30',
+      already_paid: true,
+    } as any);
+
+    const rows = prisma.payrollPayment.create.mock.calls.map(
+      (c: any[]) => c[0].data,
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.status).toBe('PAID');
+      expect(row.paid_at).toEqual(row.scheduled_pay_date);
+    }
+    expect(result.paid).toBe(rows.length);
+  });
+
+  /* Un rango que cruce hoy no puede dar por liquidado lo que no ha vencido. */
+  it('no da por pagado lo que todavía no vence', async () => {
+    const futuro = new Date();
+    futuro.setFullYear(futuro.getFullYear() + 1);
+
+    await service.generate(ctx, {
+      start_date: futuro.toISOString().slice(0, 10),
+      end_date: `${futuro.getFullYear() + 1}-01-31`,
+      already_paid: true,
+    } as any);
+
+    const rows = prisma.payrollPayment.create.mock.calls.map(
+      (c: any[]) => c[0].data,
+    );
+    for (const row of rows) {
+      expect(row.status).toBe('PENDING');
+      expect(row.paid_at).toBeNull();
+    }
+  });
+
+  it('sin el flag sigue generando en PENDING', async () => {
+    const result = await service.generate(ctx, {
+      start_date: '2026-02-01',
+      end_date: '2026-04-30',
+    } as any);
+
+    const rows = prisma.payrollPayment.create.mock.calls.map(
+      (c: any[]) => c[0].data,
+    );
+    for (const row of rows) expect(row.status).toBe('PENDING');
+    expect(result.paid).toBe(0);
+  });
+});

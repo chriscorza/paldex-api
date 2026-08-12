@@ -43,6 +43,7 @@ export class PayrollService {
     const rangeStart = new Date(dto.start_date);
     const rangeEnd = new Date(dto.end_date);
     let created = 0;
+    let paid = 0;
     const skipped: string[] = [];
 
     for (const emp of employees) {
@@ -67,6 +68,10 @@ export class PayrollService {
 
         const netAmount = new Decimal(emp.base_salary).toNumber();
 
+        /* Lo que aún no ha vencido no se da por pagado ni pidiéndolo. */
+        const alreadyPaid =
+          dto.already_paid === true && period.scheduled_pay_date <= new Date();
+
         try {
           await this.prisma.payrollPayment.create({
             data: {
@@ -79,11 +84,13 @@ export class PayrollService {
               deductions: 0,
               bonuses: 0,
               net_amount: netAmount,
-              status: 'PENDING',
+              status: alreadyPaid ? 'PAID' : 'PENDING',
+              paid_at: alreadyPaid ? period.scheduled_pay_date : null,
               auto_generated: true,
             },
           });
           created++;
+          if (alreadyPaid) paid++;
         } catch (error: any) {
           if (error.code === 'P2002') {
             skipped.push(
@@ -96,7 +103,7 @@ export class PayrollService {
       }
     }
 
-    return { created, skipped: skipped.length, skipped_details: skipped };
+    return { created, paid, skipped: skipped.length, skipped_details: skipped };
   }
 
   async createManual(ctx: OwnershipContext, dto: CreatePayrollPaymentDto) {

@@ -119,6 +119,7 @@ export class RecurringExpensesService {
     const rangeStart = new Date(dto.start_date);
     const rangeEnd = new Date(dto.end_date);
     let created = 0;
+    let paid = 0;
     const skipped: string[] = [];
 
     for (const tpl of templates) {
@@ -143,6 +144,14 @@ export class RecurringExpensesService {
       for (const dd of dueDates) {
         if (dd.scheduled_due_date < tpl.start_date) continue;
 
+        /*
+         * El futuro nunca se marca pagado aunque lo pidan: `already_paid` es
+         * para cargar historia, y un rango que cruce hoy no debe dar por
+         * liquidado lo que aún no ha vencido.
+         */
+        const alreadyPaid =
+          dto.already_paid === true && dd.scheduled_due_date <= new Date();
+
         try {
           await this.closeGuard.ensureOpen(ctx.userId, dd.scheduled_due_date);
           await this.prisma.expense.create({
@@ -154,8 +163,8 @@ export class RecurringExpensesService {
               invoiced: false,
               account_id: tpl.account_id ?? undefined,
               category_id: tpl.category_id,
-              status: 'PENDING',
-              paid_at: null,
+              status: alreadyPaid ? 'PAID' : 'PENDING',
+              paid_at: alreadyPaid ? dd.scheduled_due_date : null,
               invoice_status: 'NOT_INVOICED',
               is_tax_deductible: true,
               tax_creditable_amount: 0,
@@ -165,6 +174,7 @@ export class RecurringExpensesService {
             },
           });
           created++;
+          if (alreadyPaid) paid++;
         } catch (e: any) {
           if (e.code === 'P2002') {
             skipped.push(
@@ -181,6 +191,7 @@ export class RecurringExpensesService {
       }
     }
 
-    return { created, skipped: skipped.length };
+    /* `paid` deja ver cuántos se dieron por liquidados, que no es evidente. */
+    return { created, paid, skipped: skipped.length };
   }
 }
