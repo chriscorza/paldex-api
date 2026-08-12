@@ -686,3 +686,117 @@ describe('ShopifyConnectionService — gateway accounts', () => {
     });
   });
 });
+
+/*
+ * Los webhooks se registraban todos en la URL base, que no tiene handler, así
+ * que cada entrega de Shopify se iba a un 404 desde la instalación. Y como sólo
+ * se registran durante el OAuth, reinstalar repetía el mismo error.
+ */
+describe('ShopifyConnectionService — re-registro de webhooks', () => {
+  const TOPICS = [
+    'ORDERS_CREATE',
+    'ORDERS_UPDATED',
+    'ORDER_TRANSACTIONS_CREATE',
+    'REFUNDS_CREATE',
+  ];
+  const BASE = 'https://api.corszas.com/shopify/webhooks';
+
+  let service: any;
+  let graphql: any;
+
+  const build = async (existing: any[]) => {
+    graphql = {
+      listWebhooks: jest.fn().mockResolvedValue(existing),
+      deleteWebhook: jest.fn(),
+      registerWebhooks: jest.fn(),
+      webhookUrlForTopic: (base: string, topic: string) =>
+        `${base.replace(/\/+$/, '')}/${topic.toLowerCase().replace(/_/g, '-')}`,
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ShopifyConnectionService,
+        { provide: PrismaService, useValue: {} },
+        { provide: JwtService, useValue: {} },
+        {
+          provide: ShopifyBackfillService,
+          useValue: { getDefaultTopics: () => TOPICS },
+        },
+        { provide: ShopifyGraphQLService, useValue: graphql },
+      ],
+    }).compile();
+
+    return module.get<ShopifyConnectionService>(ShopifyConnectionService);
+  };
+
+  beforeEach(() => {
+    process.env.SHOPIFY_CALLBACK_URL =
+      'https://api.corszas.com/shopify/oauth/callback';
+  });
+
+  it('registra cada topic en su propia ruta, no en la base', async () => {
+    service = await build([]);
+
+    const result = await service.resyncWebhooks(1);
+
+    const [, topics, baseUrl] = graphql.registerWebhooks.mock.calls[0];
+    expect(topics).toEqual(TOPICS);
+    expect(baseUrl).toBe(BASE);
+    expect(result.registered).toContainEqual({
+      topic: 'ORDERS_CREATE',
+      callback_url: `${BASE}/orders-create`,
+    });
+  });
+
+  it('borra la suscripción que apunta a la URL rota', async () => {
+    service = await build([
+      {
+        id: 'gid://shopify/WebhookSubscription/1',
+        topic: 'ORDERS_CREATE',
+        callbackUrl: BASE,
+      },
+    ]);
+
+    const result = await service.resyncWebhooks(1);
+
+    expect(graphql.deleteWebhook).toHaveBeenCalledWith(
+      1,
+      'gid://shopify/WebhookSubscription/1',
+    );
+    expect(result.removed).toEqual([
+      { topic: 'ORDERS_CREATE', callback_url: BASE },
+    ]);
+  });
+
+  it('no toca las que ya están bien', async () => {
+    service = await build(
+      TOPICS.map((topic, i) => ({
+        id: `gid://shopify/WebhookSubscription/${i}`,
+        topic,
+        callbackUrl: `${BASE}/${topic.toLowerCase().replace(/_/g, '-')}`,
+      })),
+    );
+
+    const result = await service.resyncWebhooks(1);
+
+    expect(graphql.deleteWebhook).not.toHaveBeenCalled();
+    expect(graphql.registerWebhooks).not.toHaveBeenCalled();
+    expect(result.already_correct).toHaveLength(4);
+  });
+
+  it('sólo re-registra lo que falta', async () => {
+    service = await build([
+      {
+        id: 'gid://shopify/WebhookSubscription/1',
+        topic: 'ORDERS_CREATE',
+        callbackUrl: `${BASE}/orders-create`,
+      },
+    ]);
+
+    await service.resyncWebhooks(1);
+
+    const [, topics] = graphql.registerWebhooks.mock.calls[0];
+    expect(topics).not.toContain('ORDERS_CREATE');
+    expect(topics).toHaveLength(3);
+  });
+});

@@ -50,10 +50,21 @@ export class ShopifyGraphQLService {
     return json.data as T;
   }
 
+  /*
+   * Cada topic tiene su propia ruta en el controlador (`ORDERS_CREATE` ->
+   * `/shopify/webhooks/orders-create`). Registrarlos todos en la URL base
+   * —que es lo que se hacía— los mandaba a un 404: no hay handler en la raíz,
+   * así que ninguna entrega de Shopify llegó nunca a procesarse.
+   */
+  webhookUrlForTopic(baseUrl: string, topic: string): string {
+    const path = topic.toLowerCase().replace(/_/g, '-');
+    return `${baseUrl.replace(/\/+$/, '')}/${path}`;
+  }
+
   async registerWebhooks(
     connectionId: number,
     topics: string[],
-    callbackUrl: string,
+    baseUrl: string,
   ): Promise<void> {
     const conn = await this.prisma.shopifyConnection.findUnique({
       where: { id: connectionId },
@@ -65,6 +76,8 @@ export class ShopifyGraphQLService {
     const token = decryptAccessToken(conn.access_token);
 
     for (const topic of topics) {
+      const callbackUrl = this.webhookUrlForTopic(baseUrl, topic);
+
       try {
         const query = `
           mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $callbackUrl: URL!) {
@@ -108,6 +121,55 @@ export class ShopifyGraphQLService {
           err,
         );
       }
+    }
+  }
+
+  /* Shopify sólo devuelve aquí las suscripciones de esta app, no las de otras. */
+  async listWebhooks(
+    connectionId: number,
+  ): Promise<{ id: string; topic: string; callbackUrl: string | null }[]> {
+    const query = `
+      query listWebhooks {
+        webhookSubscriptions(first: 100) {
+          edges {
+            node {
+              id
+              topic
+              endpoint {
+                ... on WebhookHttpEndpoint { callbackUrl }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const data: any = await this.graphql(connectionId, query);
+
+    return (data?.webhookSubscriptions?.edges ?? []).map((edge: any) => ({
+      id: edge?.node?.id,
+      topic: edge?.node?.topic,
+      callbackUrl: edge?.node?.endpoint?.callbackUrl ?? null,
+    }));
+  }
+
+  async deleteWebhook(connectionId: number, id: string): Promise<void> {
+    const mutation = `
+      mutation webhookSubscriptionDelete($id: ID!) {
+        webhookSubscriptionDelete(id: $id) {
+          deletedWebhookSubscriptionId
+          userErrors { field message }
+        }
+      }
+    `;
+
+    const data: any = await this.graphql(connectionId, mutation, { id });
+    const userErrors = data?.webhookSubscriptionDelete?.userErrors;
+
+    if (userErrors?.length > 0) {
+      this.logger.warn(
+        `Failed to delete webhook ${id} for connection ${connectionId}: ${userErrors[0].message}`,
+      );
     }
   }
 

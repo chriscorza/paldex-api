@@ -174,11 +174,6 @@ export class ShopifyConnectionService {
         )
         .catch(() => {});
 
-      const callbackUrl =
-        process.env.SHOPIFY_CALLBACK_URL ||
-        'http://localhost:3000/shopify/oauth/callback';
-      const webhookBaseUrl = callbackUrl.replace('/shopify/oauth/callback', '');
-
       const conn = await this.prisma.shopifyConnection.findUnique({
         where: { shop_domain: shop },
         select: { id: true },
@@ -186,10 +181,7 @@ export class ShopifyConnectionService {
 
       if (conn) {
         this.backfillService
-          .registerWebhooksAndBackfill(
-            conn.id,
-            `${webhookBaseUrl}/shopify/webhooks`,
-          )
+          .registerWebhooksAndBackfill(conn.id, this.webhookBaseUrl())
           .catch((err) => {
             console.error('Failed to setup webhooks/backfill:', err);
           });
@@ -555,6 +547,74 @@ export class ShopifyConnectionService {
     ]);
 
     return this.getGatewayAccounts(userId, connectionId);
+  }
+
+  /* La base de los webhooks sale del callback de OAuth: mismo host, otra ruta. */
+  private webhookBaseUrl(): string {
+    const callbackUrl =
+      process.env.SHOPIFY_CALLBACK_URL ||
+      'http://localhost:3000/shopify/oauth/callback';
+
+    return `${callbackUrl.replace('/shopify/oauth/callback', '')}/shopify/webhooks`;
+  }
+
+  /*
+   * Re-registra los webhooks de una tienda ya conectada.
+   *
+   * Hacía falta porque sólo se registraban durante el OAuth, y lo que quedó
+   * registrado apuntaba a la URL base —un 404— así que ninguna venta llegó
+   * nunca por webhook. Reinstalar no arreglaba nada: repetía el mismo error.
+   *
+   * Borra sólo las suscripciones de los topics que maneja esta app y cuya URL
+   * no es la que toca; las que ya estén bien se dejan como están. Shopify
+   * además elimina por su cuenta las que llevan tiempo fallando, así que puede
+   * que no quede ninguna que borrar.
+   */
+  async resyncWebhooks(connectionId: number) {
+    const baseUrl = this.webhookBaseUrl();
+    const topics = this.backfillService.getDefaultTopics();
+
+    const wanted = new Map(
+      topics.map((topic) => [
+        topic,
+        this.graphql.webhookUrlForTopic(baseUrl, topic),
+      ]),
+    );
+
+    const existing = await this.graphql.listWebhooks(connectionId);
+
+    const stale = existing.filter((sub) => {
+      const want = wanted.get(sub.topic);
+      return want !== undefined && sub.callbackUrl !== want;
+    });
+
+    for (const sub of stale) {
+      await this.graphql.deleteWebhook(connectionId, sub.id);
+    }
+
+    const alreadyCorrect = existing
+      .filter((sub) => wanted.get(sub.topic) === sub.callbackUrl)
+      .map((sub) => sub.topic);
+
+    const missing = topics.filter(
+      (topic) => !alreadyCorrect.includes(topic as any),
+    );
+
+    if (missing.length > 0) {
+      await this.graphql.registerWebhooks(connectionId, missing, baseUrl);
+    }
+
+    return {
+      registered: missing.map((topic) => ({
+        topic,
+        callback_url: wanted.get(topic),
+      })),
+      removed: stale.map((sub) => ({
+        topic: sub.topic,
+        callback_url: sub.callbackUrl,
+      })),
+      already_correct: alreadyCorrect,
+    };
   }
 
   async resolveAccountForGateway(connectionId: number, gateway: string) {

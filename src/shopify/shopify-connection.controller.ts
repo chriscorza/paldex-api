@@ -177,6 +177,24 @@ export class ShopifyConnectionController {
     return this.backfillService.triggerBackfillEndpoint(id);
   }
 
+  @Post('connections/:id/webhooks/resync')
+  @RequirePermissions('shopify_connection:update')
+  @ApiOperation({
+    summary: 'Re-registrar los webhooks de una tienda ya conectada',
+    description:
+      'Los webhooks sólo se registraban durante el OAuth, y lo hacían contra la URL base ' +
+      '(`/shopify/webhooks`), que no tiene handler: cada entrega de Shopify se iba a un 404. ' +
+      'Esto borra las suscripciones que apuntan a donde no deben y crea las correctas, una por topic. ' +
+      'Idempotente: si ya están bien, no toca nada.',
+  })
+  async resyncWebhooks(
+    @CurrentUser() user: { id: number; email: string },
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    await this.shopifyService.verifyConnectionOwnership(user.id, id);
+    return this.shopifyService.resyncWebhooks(id);
+  }
+
   @Post('reconcile')
   @RequirePermissions('shopify_connection:update')
   @ApiOperation({
