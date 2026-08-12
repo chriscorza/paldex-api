@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import { monthRangeInZone } from '../common/timezone';
 import { ReportsAggregationService } from '../reports/reports-aggregation.service';
 import { ProfitEngine } from '../reports/profit-engine.service';
 import { Prisma as PrismaClient } from '@prisma/client';
@@ -71,8 +72,7 @@ export class MonthlyCloseService {
   }
 
   async preflight(ctx: OwnershipContext, year: number, month: number) {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
+    const { startDate, endDate } = monthRangeInZone(year, month);
     const ownerFilter = buildOwnerFilter(ctx);
 
     const [pendingExpenses, pendingPayroll, pendingTaxes, salesWithoutCost] =
@@ -187,8 +187,7 @@ export class MonthlyCloseService {
         `Cannot close: ${pre.blocking_issues.join(', ')}`,
       );
 
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
+    const { startDate, endDate } = monthRangeInZone(year, month);
     const aggregates = await this.aggregation.getMonthlyAggregates(
       ctx,
       startDate,
@@ -294,8 +293,7 @@ export class MonthlyCloseService {
       return { status: 'UNKNOWN_FINGERPRINT_VERSION', year, month };
     }
 
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59);
+    const { startDate, endDate } = monthRangeInZone(year, month);
     const current = await this.computeFingerprint(ctx, startDate, endDate);
 
     const stored = close.source_fingerprint as any;

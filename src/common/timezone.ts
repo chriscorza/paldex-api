@@ -128,6 +128,29 @@ export function endOfDayInZone(
   return zonedTimeToUtc(year, month, date, 23, 59, 59, 999, timeZone);
 }
 
+/*
+ * En qué mes estamos según la tienda. Con `new Date().getMonth()` —la zona del
+ * servidor, UTC en el contenedor— el día 1 de cada mes, hasta las 06:00, el
+ * negocio sigue en el mes anterior y el reporte ya había pasado al siguiente.
+ */
+export function currentMonthInZone(timeZone: string = reportsTimeZone()): {
+  year: number;
+  month: number;
+} {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+  });
+
+  const parts: Record<string, string> = {};
+  for (const part of formatter.formatToParts(new Date())) {
+    parts[part.type] = part.value;
+  }
+
+  return { year: Number(parts.year), month: Number(parts.month) };
+}
+
 export function monthRangeInZone(
   year: number,
   month: number,

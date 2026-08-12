@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { ReportsAggregationService } from './reports-aggregation.service';
 import { ProfitEngine } from './profit-engine.service';
 import { OwnershipContext } from '../common/ownership';
+import { currentMonthInZone, monthRangeInZone } from '../common/timezone';
 
 @Injectable()
 export class ComparisonService {
@@ -21,8 +22,7 @@ export class ComparisonService {
 
     for (const period of periods) {
       const [y, m] = period.split('-').map(Number);
-      const startDate = new Date(y, m - 1, 1);
-      const endDate = new Date(y, m, 0, 23, 59, 59);
+      const { startDate, endDate } = monthRangeInZone(y, m);
 
       const snapshot = await this.prisma.monthlyClose.findUnique({
         where: {
@@ -105,14 +105,14 @@ export class ComparisonService {
     if (months < 2 || months > 36)
       throw new Error('Months must be between 2 and 36');
     const results = [];
-    const now = new Date();
+    const current = currentMonthInZone();
 
     for (let i = months - 1; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const y = d.getFullYear();
-      const m = d.getMonth() + 1;
-      const startDate = new Date(y, m - 1, 1);
-      const endDate = new Date(y, m, 0, 23, 59, 59);
+      /* Aritmética de calendario pura: `Date.UTC` normaliza el mes negativo. */
+      const cursor = new Date(Date.UTC(current.year, current.month - 1 - i, 1));
+      const y = cursor.getUTCFullYear();
+      const m = cursor.getUTCMonth() + 1;
+      const { startDate, endDate } = monthRangeInZone(y, m);
       const period = `${y}-${String(m).padStart(2, '0')}`;
 
       const snapshot = await this.prisma.monthlyClose.findUnique({

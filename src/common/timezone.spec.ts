@@ -2,6 +2,7 @@ import {
   startOfDayInZone,
   endOfDayInZone,
   monthRangeInZone,
+  currentMonthInZone,
   reportsTimeZone,
 } from './timezone';
 
@@ -71,6 +72,33 @@ describe('timezone — rangos de los reportes', () => {
 
       expect(invierno.toISOString()).toBe('2026-01-14T23:00:00.000Z');
       expect(verano.toISOString()).toBe('2026-07-14T22:00:00.000Z');
+    });
+  });
+
+  /*
+   * El día 1 de cada mes, entre las 00:00 y las 06:00 UTC, el negocio todavía
+   * está en el mes anterior. Con `new Date().getMonth()` el dashboard ya se
+   * había pasado al siguiente y mostraba un mes recién empezado como actual.
+   */
+  describe('currentMonthInZone', () => {
+    afterEach(() => jest.useRealTimers());
+
+    it('sigue en el mes anterior mientras la tienda no ha cambiado de mes', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-08-01T03:00:00Z'));
+
+      expect(currentMonthInZone(CDMX)).toEqual({ year: 2026, month: 7 });
+    });
+
+    it('cambia de mes cuando la tienda cambia', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-08-01T06:00:00Z'));
+
+      expect(currentMonthInZone(CDMX)).toEqual({ year: 2026, month: 8 });
+    });
+
+    it('cruza bien el año', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2027-01-01T03:00:00Z'));
+
+      expect(currentMonthInZone(CDMX)).toEqual({ year: 2026, month: 12 });
     });
   });
 
