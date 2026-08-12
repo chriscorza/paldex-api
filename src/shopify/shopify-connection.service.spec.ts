@@ -199,18 +199,122 @@ describe('ShopifyConnectionService — gateway accounts', () => {
     });
   });
 
+  /*
+   * El gateway viaja por tres sitios —se guarda, se resuelve al crear el
+   * ingreso y se vuelve a resolver al reasignar— y los tres tienen que
+   * normalizarlo igual. Si uno solo divergiera, el mapeo dejaría de casar y los
+   * ingresos caerían en la cuenta por defecto sin ningún error visible, que es
+   * exactamente lo que pasó con «tarjeta mercadopago».
+   */
+  describe('normalización del gateway de punta a punta', () => {
+    it('guarda el gateway normalizado, con sus espacios interiores', async () => {
+      prisma.shopifyConnection.findFirst.mockResolvedValue({
+        id: 1,
+        user_id: 10,
+      });
+      prisma.account.findFirst.mockResolvedValue({ id: 1, user_id: 10 });
+      prisma.shopifyGatewayAccount.findMany.mockResolvedValue([]);
+      prisma.income.groupBy.mockResolvedValue([]);
+
+      await service.updateGatewayAccounts(10, 1, {
+        mappings: [{ gateway: '  Tarjeta MercadoPago ', account_id: 1 }],
+      });
+
+      expect(prisma.shopifyGatewayAccount.create).toHaveBeenCalledWith({
+        data: {
+          shopify_connection_id: 1,
+          gateway: 'tarjeta mercadopago',
+          account_id: 1,
+        },
+      });
+    });
+
+    it('resuelve la cuenta aunque Shopify mande el gateway con mayúsculas', async () => {
+      prisma.shopifyGatewayAccount.findUnique.mockResolvedValue({
+        account_id: 5,
+      });
+
+      await service.resolveAccountForGateway(1, 'Tarjeta MercadoPago');
+
+      expect(prisma.shopifyGatewayAccount.findUnique).toHaveBeenCalledWith({
+        where: {
+          shopify_connection_id_gateway: {
+            shopify_connection_id: 1,
+            gateway: 'tarjeta mercadopago',
+          },
+        },
+        select: { account_id: true },
+      });
+    });
+
+    it('rechaza como duplicados dos gateways que sólo difieren en caja', async () => {
+      prisma.shopifyConnection.findFirst.mockResolvedValue({
+        id: 1,
+        user_id: 10,
+      });
+
+      await expect(
+        service.updateGatewayAccounts(10, 1, {
+          mappings: [
+            { gateway: 'Tarjeta MercadoPago', account_id: 1 },
+            { gateway: 'tarjeta mercadopago', account_id: 2 },
+          ],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('reasigna casando el canal del ingreso con el mapeo normalizado', async () => {
+      prisma.shopifyConnection.findFirst.mockResolvedValue({
+        id: 1,
+        user_id: 10,
+      });
+      prisma.shopifyConnection.findUnique.mockResolvedValue({ account_id: 99 });
+      prisma.shopifyGatewayAccount.findMany.mockResolvedValue([
+        { gateway: 'tarjeta mercadopago', account_id: 7 },
+      ]);
+      prisma.income.findMany.mockResolvedValue([
+        {
+          id: 1,
+          channel: 'Tarjeta MercadoPago',
+          account_id: 99,
+          date: new Date('2026-03-01'),
+        },
+      ]);
+      prisma.monthlyClose.findMany.mockResolvedValue([]);
+      prisma.income.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.reapplyGatewayMapping(10, 1);
+
+      expect(result.updated).toBe(1);
+      expect(prisma.income.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [1] } },
+        data: { account_id: 7 },
+      });
+    });
+  });
+
   describe('reapplyGatewayMapping', () => {
     const setup = (opts: {
       defaultAccount?: number;
       mappings?: { gateway: string; account_id: number }[];
-      incomes?: { id: number; channel: string | null; account_id: number; date: Date }[];
+      incomes?: {
+        id: number;
+        channel: string | null;
+        account_id: number;
+        date: Date;
+      }[];
       closed?: { year: number; month: number }[];
     }) => {
-      prisma.shopifyConnection.findFirst.mockResolvedValue({ id: 1, user_id: 10 });
+      prisma.shopifyConnection.findFirst.mockResolvedValue({
+        id: 1,
+        user_id: 10,
+      });
       prisma.shopifyConnection.findUnique.mockResolvedValue({
         account_id: opts.defaultAccount ?? 99,
       });
-      prisma.shopifyGatewayAccount.findMany.mockResolvedValue(opts.mappings ?? []);
+      prisma.shopifyGatewayAccount.findMany.mockResolvedValue(
+        opts.mappings ?? [],
+      );
       prisma.income.findMany.mockResolvedValue(opts.incomes ?? []);
       prisma.monthlyClose.findMany.mockResolvedValue(opts.closed ?? []);
       prisma.income.updateMany.mockResolvedValue({ count: 0 });
@@ -220,8 +324,18 @@ describe('ShopifyConnectionService — gateway accounts', () => {
       setup({
         mappings: [{ gateway: 'cash', account_id: 7 }],
         incomes: [
-          { id: 1, channel: 'cash', account_id: 99, date: new Date('2026-03-01') },
-          { id: 2, channel: 'cash', account_id: 99, date: new Date('2026-03-02') },
+          {
+            id: 1,
+            channel: 'cash',
+            account_id: 99,
+            date: new Date('2026-03-01'),
+          },
+          {
+            id: 2,
+            channel: 'cash',
+            account_id: 99,
+            date: new Date('2026-03-02'),
+          },
         ],
       });
 
@@ -245,7 +359,12 @@ describe('ShopifyConnectionService — gateway accounts', () => {
         defaultAccount: 99,
         mappings: [{ gateway: 'cash', account_id: 7 }],
         incomes: [
-          { id: 3, channel: 'paypal', account_id: 7, date: new Date('2026-03-01') },
+          {
+            id: 3,
+            channel: 'paypal',
+            account_id: 7,
+            date: new Date('2026-03-01'),
+          },
         ],
       });
 
@@ -262,7 +381,12 @@ describe('ShopifyConnectionService — gateway accounts', () => {
       setup({
         mappings: [{ gateway: 'cash', account_id: 7 }],
         incomes: [
-          { id: 4, channel: 'cash', account_id: 7, date: new Date('2026-03-01') },
+          {
+            id: 4,
+            channel: 'cash',
+            account_id: 7,
+            date: new Date('2026-03-01'),
+          },
         ],
       });
 
@@ -276,8 +400,18 @@ describe('ShopifyConnectionService — gateway accounts', () => {
       setup({
         mappings: [{ gateway: 'cash', account_id: 7 }],
         incomes: [
-          { id: 5, channel: 'cash', account_id: 99, date: new Date('2026-01-15') },
-          { id: 6, channel: 'cash', account_id: 99, date: new Date('2026-03-15') },
+          {
+            id: 5,
+            channel: 'cash',
+            account_id: 99,
+            date: new Date('2026-01-15'),
+          },
+          {
+            id: 6,
+            channel: 'cash',
+            account_id: 99,
+            date: new Date('2026-03-15'),
+          },
         ],
         closed: [{ year: 2026, month: 1 }],
       });
@@ -295,7 +429,12 @@ describe('ShopifyConnectionService — gateway accounts', () => {
       setup({
         mappings: [{ gateway: 'cash', account_id: 7 }],
         incomes: [
-          { id: 7, channel: 'cash', account_id: 99, date: new Date('2026-03-01') },
+          {
+            id: 7,
+            channel: 'cash',
+            account_id: 99,
+            date: new Date('2026-03-01'),
+          },
         ],
       });
 
@@ -312,9 +451,24 @@ describe('ShopifyConnectionService — gateway accounts', () => {
           { gateway: 'paypal', account_id: 8 },
         ],
         incomes: [
-          { id: 8, channel: 'paypal', account_id: 99, date: new Date('2026-03-01') },
-          { id: 9, channel: 'cash', account_id: 99, date: new Date('2026-03-01') },
-          { id: 10, channel: 'cash', account_id: 99, date: new Date('2026-03-01') },
+          {
+            id: 8,
+            channel: 'paypal',
+            account_id: 99,
+            date: new Date('2026-03-01'),
+          },
+          {
+            id: 9,
+            channel: 'cash',
+            account_id: 99,
+            date: new Date('2026-03-01'),
+          },
+          {
+            id: 10,
+            channel: 'cash',
+            account_id: 99,
+            date: new Date('2026-03-01'),
+          },
         ],
       });
 

@@ -12,6 +12,7 @@ import { InstallShopifyDto } from './dto/install-shopify.dto';
 import { UpdateGatewayAccountsDto } from './dto/update-gateway-accounts.dto';
 import { ShopifyBackfillService } from './shopify-backfill.service';
 import { ShopifyGraphQLService } from './shopify-graphql.service';
+import { normalizeGateway } from './gateway';
 
 @Injectable()
 export class ShopifyConnectionService {
@@ -328,7 +329,10 @@ export class ShopifyConnectionService {
     const data: any = await this.graphql.graphql(connectionId, query);
     const edges: any[] = data?.orders?.edges ?? [];
 
-    const found = new Map<string, { gateway: string; label: string; count: number }>();
+    const found = new Map<
+      string,
+      { gateway: string; label: string; count: number }
+    >();
 
     for (const edge of edges) {
       for (const txn of edge?.node?.transactions ?? []) {
@@ -413,16 +417,21 @@ export class ShopifyConnectionService {
       }),
     ]);
 
-    const byGateway = new Map(mappings.map((m) => [m.gateway, m.account_id]));
+    const byGateway = new Map(
+      mappings.map((m) => [normalizeGateway(m.gateway), m.account_id]),
+    );
     const closed = new Set(closedMonths.map((c) => `${c.year}-${c.month}`));
 
     const pending = new Map<number, number[]>();
-    const perGateway = new Map<string, { account_id: number; updated: number }>();
+    const perGateway = new Map<
+      string,
+      { account_id: number; updated: number }
+    >();
     let unchanged = 0;
     let skippedClosedMonth = 0;
 
     for (const income of incomes) {
-      const gateway = income.channel ?? '';
+      const gateway = normalizeGateway(income.channel);
       const target = byGateway.get(gateway) ?? conn.account_id;
 
       if (target === income.account_id) {
@@ -440,7 +449,10 @@ export class ShopifyConnectionService {
       ids.push(income.id);
       pending.set(target, ids);
 
-      const stat = perGateway.get(gateway) ?? { account_id: target, updated: 0 };
+      const stat = perGateway.get(gateway) ?? {
+        account_id: target,
+        updated: 0,
+      };
       stat.updated++;
       perGateway.set(gateway, stat);
     }
@@ -479,7 +491,7 @@ export class ShopifyConnectionService {
   ) {
     const conn = await this.verifyConnectionOwnership(userId, connectionId);
 
-    const gateways = dto.mappings.map((m) => m.gateway);
+    const gateways = dto.mappings.map((m) => normalizeGateway(m.gateway));
     const uniqueGateways = new Set(gateways);
     if (uniqueGateways.size !== gateways.length) {
       throw new BadRequestException('Duplicate gateways are not allowed');
@@ -504,7 +516,7 @@ export class ShopifyConnectionService {
         this.prisma.shopifyGatewayAccount.create({
           data: {
             shopify_connection_id: connectionId,
-            gateway: m.gateway,
+            gateway: normalizeGateway(m.gateway),
             account_id: m.account_id,
           },
         }),
@@ -519,7 +531,7 @@ export class ShopifyConnectionService {
       where: {
         shopify_connection_id_gateway: {
           shopify_connection_id: connectionId,
-          gateway,
+          gateway: normalizeGateway(gateway),
         },
       },
       select: { account_id: true },
