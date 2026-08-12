@@ -1,6 +1,9 @@
 import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ShopifyConnectionService } from './shopify-connection.service';
+import { Prisma as PrismaClient } from '@prisma/client';
+
+const Decimal = PrismaClient.Decimal;
 
 @Injectable()
 export class ShopifyTransactionSyncService {
@@ -76,6 +79,21 @@ export class ShopifyTransactionSyncService {
       await this.prisma.income.create({
         data: {
           amount,
+          /*
+           * Los reportes de P&L suman `net_amount`, no `amount`: `net_sales`
+           * sale de `SUM(income.net_amount)`. Los ingresos manuales lo rellenan
+           * en `IncomesService.create` —sin desglose, neto = bruto = importe—,
+           * pero aquí se crea con Prisma directo y ese cálculo se saltaba, así
+           * que la columna quedaba en NULL y las ventas de Shopify no sumaban
+           * en ningún reporte.
+           *
+           * Neto = bruto = importe cobrado, sin desglose. Es lo correcto: el
+           * importe de la transacción ya viene con los descuentos aplicados, y
+           * repartir el descuento del pedido entre varias transacciones —un
+           * pago partido— sería inventarse una asignación.
+           */
+          gross_amount: amount,
+          net_amount: amount,
           concept,
           date: transactionDate,
           invoiced: false,
@@ -127,10 +145,13 @@ export class ShopifyTransactionSyncService {
         continue;
       }
 
-      const currentAmount = Number(income.amount);
-      const newAmount = currentAmount - refundAmount;
+      /* Decimal y no resta de números: 598.94 - 100 da 498.94000000000005 en
+         punto flotante, y el proyecto prohíbe expresamente hacer aritmética de
+         dinero así. */
+      const currentAmount = new Decimal(income.amount);
+      const newAmount = currentAmount.minus(new Decimal(refundAmount));
 
-      if (newAmount <= 0) {
+      if (newAmount.lessThanOrEqualTo(0)) {
         await this.prisma.income.delete({
           where: { id: income.id },
         });
@@ -138,12 +159,18 @@ export class ShopifyTransactionSyncService {
           `Deleted income ${income.id} due to full refund of transaction ${parentId}`,
         );
       } else {
+        /* Mismo motivo que al crear: si el neto no baja con el importe, el
+           reembolso no se refleja en ningún reporte. */
         await this.prisma.income.update({
           where: { id: income.id },
-          data: { amount: newAmount },
+          data: {
+            amount: newAmount,
+            gross_amount: newAmount,
+            net_amount: newAmount,
+          },
         });
         this.logger.log(
-          `Reduced income ${income.id} from ${currentAmount} to ${newAmount} due to refund`,
+          `Reduced income ${income.id} from ${currentAmount.toString()} to ${newAmount.toString()} due to refund`,
         );
       }
 

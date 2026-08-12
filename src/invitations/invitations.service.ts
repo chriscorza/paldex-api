@@ -1,7 +1,14 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InvitationStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma.service';
-import { INVITATION_SELECT, InvitationView } from './entities/invitation.entity';
+import {
+  INVITATION_SELECT,
+  InvitationView,
+} from './entities/invitation.entity';
 
 @Injectable()
 export class InvitationsService {
@@ -14,7 +21,11 @@ export class InvitationsService {
 
     if (!existing) {
       return this.prisma.invitation.create({
-        data: { email, invited_by: invitedBy, status: InvitationStatus.PENDING },
+        data: {
+          email,
+          invited_by: invitedBy,
+          status: InvitationStatus.PENDING,
+        },
         select: INVITATION_SELECT,
       });
     }

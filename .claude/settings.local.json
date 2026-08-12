@@ -1,0 +1,13 @@
+{
+  "skillOverrides": {
+    "openspec-apply-change": "off",
+    "openspec-archive-change": "off",
+    "openspec-explore": "off",
+    "openspec-propose": "off",
+    "openspec-sync-specs": "off",
+    "openspec-update-change": "off",
+    "opsx:archive": "off",
+    "opsx:explore": "off",
+    "opsx:sync": "off"
+  }
+}

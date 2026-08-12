@@ -43,7 +43,9 @@ export class InvitationsController {
 
   @Get()
   @ApiOperation({ summary: 'Listar invitaciones' })
-  @ApiOkResponse({ description: 'Listado de invitaciones, sin filtrar por estado' })
+  @ApiOkResponse({
+    description: 'Listado de invitaciones, sin filtrar por estado',
+  })
   findAll() {
     return this.invitationsService.findAll();
   }

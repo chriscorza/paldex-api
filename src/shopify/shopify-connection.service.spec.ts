@@ -510,9 +510,24 @@ describe('ShopifyConnectionService — gateway accounts', () => {
         defaultAccount: 99,
         mappings: [{ gateway: 'tarjetamercadopago', account_id: 7 }],
         incomes: [
-          { id: 1, channel: 'tarjeta mercadopago', account_id: 99, date: new Date('2026-03-01') },
-          { id: 2, channel: 'tarjeta mercadopago', account_id: 99, date: new Date('2026-03-02') },
-          { id: 3, channel: 'cash', account_id: 99, date: new Date('2026-03-03') },
+          {
+            id: 1,
+            channel: 'tarjeta mercadopago',
+            account_id: 99,
+            date: new Date('2026-03-01'),
+          },
+          {
+            id: 2,
+            channel: 'tarjeta mercadopago',
+            account_id: 99,
+            date: new Date('2026-03-02'),
+          },
+          {
+            id: 3,
+            channel: 'cash',
+            account_id: 99,
+            date: new Date('2026-03-03'),
+          },
         ],
       });
 
@@ -534,7 +549,12 @@ describe('ShopifyConnectionService — gateway accounts', () => {
       setup({
         mappings: [{ gateway: 'tarjeta mercadopago', account_id: 7 }],
         incomes: [
-          { id: 1, channel: 'Tarjeta MercadoPago', account_id: 99, date: new Date('2026-03-01') },
+          {
+            id: 1,
+            channel: 'Tarjeta MercadoPago',
+            account_id: 99,
+            date: new Date('2026-03-01'),
+          },
         ],
       });
 
