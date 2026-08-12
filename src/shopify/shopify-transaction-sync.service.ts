@@ -38,7 +38,10 @@ export class ShopifyTransactionSyncService {
     if (status !== 'success') return;
 
     const amount = parseFloat(transaction?.amount || '0');
-    if (amount <= 0) return;
+    if (amount <= 0) {
+      await this.removeFullyRefundedIncome(transaction);
+      return;
+    }
 
     const gateway = transaction?.gateway || 'unknown';
     const transactionId = String(transaction?.id);
@@ -156,6 +159,37 @@ export class ShopifyTransactionSyncService {
         return;
       }
       throw err;
+    }
+  }
+
+  /*
+   * Un cobro que quedó reembolsado por completo llega aquí con importe cero.
+   * Si una importación anterior le creó ingreso por el total —el reembolso era
+   * previo y entonces sólo entraba por webhook— hay que borrarlo: reimportar no
+   * lo tocaría, porque ya no se emite ninguna transacción con importe.
+   *
+   * El borrado arrastra sus filas de `CostOfGoodsSold` por la cascada del
+   * modelo, y se vuelve a repartir el costo entre los ingresos que le queden al
+   * pedido.
+   */
+  private async removeFullyRefundedIncome(transaction: any): Promise<void> {
+    const transactionId = transaction?.id ? String(transaction.id) : null;
+    if (!transactionId) return;
+
+    const existing = await this.prisma.income.findFirst({
+      where: { source: 'shopify', external_transaction_id: transactionId },
+      select: { id: true, shopify_order_id: true },
+    });
+
+    if (!existing) return;
+
+    await this.prisma.income.delete({ where: { id: existing.id } });
+    this.logger.log(
+      `Deleted income ${existing.id}: transaction ${transactionId} is fully refunded`,
+    );
+
+    if (existing.shopify_order_id) {
+      await this.projection.propagateToIncomes(existing.shopify_order_id);
     }
   }
 

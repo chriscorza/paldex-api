@@ -433,31 +433,34 @@ export class ShopifyBackfillService {
       );
     }
 
-    return (
-      all
-        .filter((txn: any) => {
-          const kind = (txn?.kind || '').toLowerCase();
-          /* Una pasarela en modo prueba entraría como venta real. */
-          return (kind === 'sale' || kind === 'capture') && isSuccessful(txn);
-        })
-        .map((txn: any) => {
-          const id = this.legacyId(txn.id);
-          const charged = new Decimal(this.money(txn.amountSet));
-          const refunded = (id && refundedByParent.get(id)) || new Decimal(0);
+    return all
+      .filter((txn: any) => {
+        const kind = (txn?.kind || '').toLowerCase();
+        /* Una pasarela en modo prueba entraría como venta real. */
+        return (kind === 'sale' || kind === 'capture') && isSuccessful(txn);
+      })
+      .map((txn: any) => {
+        const id = this.legacyId(txn.id);
+        const charged = new Decimal(this.money(txn.amountSet));
+        const refunded = (id && refundedByParent.get(id)) || new Decimal(0);
+        const net = charged.minus(refunded);
 
-          return {
-            id,
-            order_id: orderId,
-            kind: txn.kind,
-            status: txn.status,
-            gateway: txn.gateway,
-            amount: charged.minus(refunded).toFixed(2),
-            processed_at: txn.processedAt,
-          };
-        })
-        /* Devuelto entero: no es un ingreso de cero, es que no hubo ingreso. */
-        .filter((txn: any) => Number(txn.amount) > 0)
-    );
+        return {
+          id,
+          order_id: orderId,
+          kind: txn.kind,
+          status: txn.status,
+          gateway: txn.gateway,
+          /*
+           * Devuelto entero da cero, y se emite igual en vez de descartarse:
+           * si una importación anterior creó ese ingreso por el importe
+           * completo —porque el reembolso era anterior y sólo llegaba por
+           * webhook—, alguien tiene que ir a borrarlo.
+           */
+          amount: (net.isNegative() ? new Decimal(0) : net).toFixed(2),
+          processed_at: txn.processedAt,
+        };
+      });
   }
 
   /* "gid://shopify/Order/450789469" -> "450789469" */

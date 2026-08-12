@@ -207,3 +207,85 @@ describe('ShopifyTransactionSyncService — reimportación', () => {
     expect(projection.propagateToIncomes).toHaveBeenCalledWith(3);
   });
 });
+
+/*
+ * Una venta reembolsada al 100 % antes de la primera importación dejó su
+ * ingreso por el total: el reembolso sólo llegaba por webhook y ese ya había
+ * pasado. Reimportar tiene que limpiarlo.
+ */
+describe('ShopifyTransactionSyncService — venta devuelta entera', () => {
+  let service: ShopifyTransactionSyncService;
+  let prisma: any;
+  let projection: any;
+
+  const refundedToZero = {
+    id: '801038806',
+    order_id: '450789469',
+    kind: 'sale',
+    status: 'success',
+    gateway: 'cash',
+    amount: '0.00',
+    processed_at: '2026-03-01T10:00:00Z',
+  };
+
+  const build = async (existingIncome: any) => {
+    prisma = {
+      income: {
+        create: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+        delete: jest.fn(),
+        findFirst: jest.fn().mockResolvedValue(existingIncome),
+      },
+      shopifyConnection: { findUnique: jest.fn() },
+      shopifyOrder: {
+        findFirst: jest.fn(),
+        findUnique: jest.fn(),
+        update: jest.fn(),
+      },
+    };
+    projection = { propagateToIncomes: jest.fn() };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ShopifyTransactionSyncService,
+        { provide: PrismaService, useValue: prisma },
+        {
+          provide: ShopifyConnectionService,
+          useValue: { resolveAccountForGateway: jest.fn() },
+        },
+        { provide: LineItemProjectionService, useValue: projection },
+      ],
+    }).compile();
+
+    return module.get<ShopifyTransactionSyncService>(
+      ShopifyTransactionSyncService,
+    );
+  };
+
+  it('borra el ingreso que había quedado por el importe completo', async () => {
+    service = await build({ id: 42, shopify_order_id: 3 });
+
+    await service.handleTransactionCreate(1, refundedToZero);
+
+    expect(prisma.income.delete).toHaveBeenCalledWith({ where: { id: 42 } });
+    expect(prisma.income.create).not.toHaveBeenCalled();
+  });
+
+  it('reparte de nuevo el costo entre los ingresos que le queden al pedido', async () => {
+    service = await build({ id: 42, shopify_order_id: 3 });
+
+    await service.handleTransactionCreate(1, refundedToZero);
+
+    expect(projection.propagateToIncomes).toHaveBeenCalledWith(3);
+  });
+
+  it('no crea nada si nunca hubo ingreso para esa transacción', async () => {
+    service = await build(null);
+
+    await service.handleTransactionCreate(1, refundedToZero);
+
+    expect(prisma.income.delete).not.toHaveBeenCalled();
+    expect(prisma.income.create).not.toHaveBeenCalled();
+  });
+});

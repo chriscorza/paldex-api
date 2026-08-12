@@ -509,7 +509,11 @@ describe('ShopifyBackfillService — datos que sólo llegan reimportando', () =>
     expect(amounts).toEqual(['500.00', '500.00']);
   });
 
-  it('no crea ingreso si la venta se devolvió entera', async () => {
+  /*
+   * Se emite con importe cero en vez de descartarse: si una importación previa
+   * creó el ingreso por el total, hay que darle al sync la ocasión de borrarlo.
+   */
+  it('emite en cero la venta devuelta entera', async () => {
     await run(
       baseOrder({
         transactions: [
@@ -527,7 +531,30 @@ describe('ShopifyBackfillService — datos que sólo llegan reimportando', () =>
       }),
     );
 
-    expect(transactionSync.handleTransactionCreate).not.toHaveBeenCalled();
+    const [, txn] = transactionSync.handleTransactionCreate.mock.calls[0];
+    expect(txn.amount).toBe('0.00');
+  });
+
+  it('no baja de cero aunque se reembolse de más', async () => {
+    await run(
+      baseOrder({
+        transactions: [
+          sale(),
+          {
+            id: 'gid://shopify/OrderTransaction/801038900',
+            kind: 'REFUND',
+            status: 'SUCCESS',
+            amountSet: { shopMoney: { amount: '700.00' } },
+            parentTransaction: {
+              id: 'gid://shopify/OrderTransaction/801038806',
+            },
+          },
+        ],
+      }),
+    );
+
+    const [, txn] = transactionSync.handleTransactionCreate.mock.calls[0];
+    expect(txn.amount).toBe('0.00');
   });
 
   it('ignora las transacciones de prueba de la pasarela', async () => {
