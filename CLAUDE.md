@@ -88,8 +88,8 @@ in UTC shifts a Mexican shop's month by 6 hours and drops the last (busiest) eve
 
 `Employee.sales_days` holds the weekdays whose sales belong to that employee (`1` = Monday …
 `7` = Sunday, ISO-8601; `null`/`[]` means none). `GET /reports/sales-by-employee` reports
-`net_sales`, `gross_sales` and `sales_count` per employee for a month — current month by default,
-`year`+`month` for any earlier one.
+`net_sales`, `gross_sales`, `sales_count`, `cogs` and `gross_profit` per employee for a month —
+current month by default, `year`+`month` for any earlier one.
 
 - **The weekday is computed in the business time zone** via `weekdayInZone()`, never `getDay()`:
   in CDMX a 19:00 Friday sale is Saturday in UTC and would be credited to the weekend shift.
@@ -104,6 +104,12 @@ in UTC shifts a Mexican shop's month by 6 hours and drops the last (busiest) eve
   `net_sales` from `GET /reports/monthly`, and a day with no owner would otherwise drop sales out
   of the total with nothing to show for it. The report deliberately does not filter by
   `income_type`, for the same reason.
+- **`gross_profit` is product profit**, `net_sales - cogs`, straight from `CostOfGoodsSold` linked
+  to each `Income` — never from a COGS-category `Expense`. It does not subtract that employee's
+  salary or the shop's overhead, so it is not what the business earns per person.
+- **`cost_data_coverage` guards that number.** A sale with no captured cost subtracts nothing, so
+  its profit comes out whole. Such sales are still counted (dropping them would break the reconcile
+  against sales), so the row publishes how many had cost: below 100% the profit is a ceiling.
 - **There is no shift history**: a past month is recomputed with today's assignment. If two
   employees swap days, earlier reports change with them.
 

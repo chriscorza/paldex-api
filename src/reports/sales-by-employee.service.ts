@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
 import { parseSalesDays } from '../employees/entities/employee.entity';
-import { toMoneyNumber } from '../common/money';
+import { percentage, toMoneyNumber } from '../common/money';
 import {
   currentMonthInZone,
   monthRangeInZone,
@@ -29,6 +29,8 @@ interface Bucket {
   net_sales: Decimal;
   gross_sales: Decimal;
   sales_count: number;
+  cogs: Decimal;
+  sales_with_cost: number;
 }
 
 /*
@@ -41,6 +43,11 @@ interface Bucket {
  * Consecuencia asumida: no hay historial de turnos. Un mes pasado se recalcula
  * con la asignación de hoy, así que si dos empleados intercambian días, los
  * reportes anteriores cambian con ellos.
+ *
+ * Además de las ventas se reporta el costo y la utilidad bruta de cada turno.
+ * Es utilidad *de producto*: ventas netas menos costo de lo vendido, sin
+ * descontar el sueldo de esa persona ni el gasto de la tienda. No mide lo que
+ * el negocio gana con cada empleado, y leerla así lleva a conclusiones falsas.
  */
 @Injectable()
 export class SalesByEmployeeService {
@@ -76,6 +83,14 @@ export class SalesByEmployeeService {
           date: true,
           net_amount: true,
           gross_amount: true,
+          /*
+           * El costo sale exclusivamente de `CostOfGoodsSold` ligado a la venta
+           * —nunca de un gasto de categoría COGS, que es compra de inventario y
+           * tiene su propia línea—. Se traen las filas y se suman aquí en vez de
+           * agregar aparte porque hay que repartirlas por día de la semana, y
+           * eso ya se está haciendo sobre el ingreso.
+           */
+          cogs: { select: { total_cost: true } },
         },
       }),
     ]);
@@ -114,6 +129,17 @@ export class SalesByEmployeeService {
       bucket.net_sales = bucket.net_sales.add(income.net_amount ?? 0);
       bucket.gross_sales = bucket.gross_sales.add(income.gross_amount ?? 0);
       bucket.sales_count += 1;
+
+      /*
+       * Una venta sin costo capturado no resta nada, así que su utilidad sale
+       * completa —inflada—. No se descarta, porque entonces el total dejaría de
+       * cuadrar con las ventas; se cuenta aparte y se publica la cobertura para
+       * que quien lea el reporte sepa de cuánto puede fiarse.
+       */
+      for (const linea of income.cogs) {
+        bucket.cogs = bucket.cogs.add(linea.total_cost);
+      }
+      if (income.cogs.length > 0) bucket.sales_with_cost += 1;
     }
 
     const rows = [...buckets.values()];
@@ -122,11 +148,15 @@ export class SalesByEmployeeService {
         net_sales: acc.net_sales.add(row.net_sales),
         gross_sales: acc.gross_sales.add(row.gross_sales),
         sales_count: acc.sales_count + row.sales_count,
+        cogs: acc.cogs.add(row.cogs),
+        sales_with_cost: acc.sales_with_cost + row.sales_with_cost,
       }),
       {
         net_sales: new Decimal(0),
         gross_sales: new Decimal(0),
         sales_count: 0,
+        cogs: new Decimal(0),
+        sales_with_cost: 0,
       },
     );
 
@@ -146,12 +176,26 @@ export class SalesByEmployeeService {
             net_sales: toMoneyNumber(row.net_sales) ?? 0,
             gross_sales: toMoneyNumber(row.gross_sales) ?? 0,
             sales_count: row.sales_count,
+            cogs: toMoneyNumber(row.cogs) ?? 0,
+            gross_profit: toMoneyNumber(row.net_sales.minus(row.cogs)) ?? 0,
+            sales_with_cost: row.sales_with_cost,
+            cost_data_coverage: percentage(
+              row.sales_with_cost,
+              row.sales_count,
+            ),
           }),
       ),
       totals: new SalesByEmployeeTotalsEntity({
         net_sales: toMoneyNumber(totals.net_sales) ?? 0,
         gross_sales: toMoneyNumber(totals.gross_sales) ?? 0,
         sales_count: totals.sales_count,
+        cogs: toMoneyNumber(totals.cogs) ?? 0,
+        gross_profit: toMoneyNumber(totals.net_sales.minus(totals.cogs)) ?? 0,
+        sales_with_cost: totals.sales_with_cost,
+        cost_data_coverage: percentage(
+          totals.sales_with_cost,
+          totals.sales_count,
+        ),
       }),
     });
   }
@@ -164,6 +208,8 @@ export class SalesByEmployeeService {
       net_sales: new Decimal(0),
       gross_sales: new Decimal(0),
       sales_count: 0,
+      cogs: new Decimal(0),
+      sales_with_cost: 0,
     };
   }
 

@@ -16,11 +16,18 @@ const FELIX = { id: 2, name: 'Félix', sales_days: [6, 7] };
  * fechas van en UTC porque así las guarda la base de datos; la conversión a la
  * zona del negocio es justo lo que se está probando.
  */
-const income = (id: number, isoDate: string, net: number, gross = net) => ({
+const income = (
+  id: number,
+  isoDate: string,
+  net: number,
+  gross = net,
+  costos: number[] = [],
+) => ({
   id,
   date: new Date(isoDate),
   net_amount: new Decimal(net),
   gross_amount: new Decimal(gross),
+  cogs: costos.map((c) => ({ total_cost: new Decimal(c) })),
 });
 
 describe('SalesByEmployeeService', () => {
@@ -231,6 +238,7 @@ describe('SalesByEmployeeService', () => {
           date: new Date('2026-08-03T18:00:00Z'),
           net_amount: null,
           gross_amount: null,
+          cogs: [],
         },
         income(2, '2026-08-04T18:00:00Z', 400, 450),
       ]);
@@ -253,6 +261,124 @@ describe('SalesByEmployeeService', () => {
 
       const where = prisma.income.findMany.mock.calls[0][0].where;
       expect(where.income_type).toBeUndefined();
+    });
+  });
+
+  describe('costo y utilidad', () => {
+    it('resta a cada empleado el costo de lo que vendió', async () => {
+      prisma.employee.findMany.mockResolvedValue([LUIS, FELIX]);
+      prisma.income.findMany.mockResolvedValue([
+        income(1, '2026-08-03T18:00:00Z', 1000, 1000, [400]),
+        income(2, '2026-08-04T18:00:00Z', 500, 500, [150, 50]),
+        income(3, '2026-08-08T18:00:00Z', 700, 700, [300]),
+      ]);
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+      });
+
+      expect(row(report, 'Luis')).toMatchObject({
+        net_sales: 1500,
+        cogs: 600,
+        gross_profit: 900,
+      });
+      expect(row(report, 'Félix')).toMatchObject({
+        net_sales: 700,
+        cogs: 300,
+        gross_profit: 400,
+      });
+    });
+
+    it('cuadra el total: utilidad = ventas netas − costo', async () => {
+      prisma.employee.findMany.mockResolvedValue([LUIS, FELIX]);
+      prisma.income.findMany.mockResolvedValue([
+        income(1, '2026-08-03T18:00:00Z', 1000, 1000, [400]),
+        income(2, '2026-08-08T18:00:00Z', 700, 700, [300]),
+      ]);
+
+      const t = (
+        await service.getSalesByEmployee(ctx, { year: 2026, month: 8 })
+      ).totals;
+
+      expect(t.cogs).toBe(700);
+      expect(t.gross_profit).toBe(t.net_sales - t.cogs);
+      expect(t.gross_profit).toBe(1000);
+    });
+
+    /*
+     * Una venta sin costo capturado no resta nada y su utilidad sale completa.
+     * No se descarta —el total dejaría de cuadrar con las ventas—, así que la
+     * cobertura es la que avisa de que la cifra va inflada.
+     */
+    it('publica la cobertura cuando falta capturar costos', async () => {
+      prisma.employee.findMany.mockResolvedValue([LUIS]);
+      prisma.income.findMany.mockResolvedValue([
+        income(1, '2026-08-03T18:00:00Z', 1000, 1000, [400]),
+        income(2, '2026-08-04T18:00:00Z', 1000, 1000), // sin costo
+      ]);
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+      });
+
+      expect(row(report, 'Luis')).toMatchObject({
+        sales_count: 2,
+        sales_with_cost: 1,
+        cost_data_coverage: 50,
+        cogs: 400,
+        gross_profit: 1600,
+      });
+    });
+
+    it('da cobertura 100 cuando todas las ventas traen costo', async () => {
+      prisma.employee.findMany.mockResolvedValue([LUIS]);
+      prisma.income.findMany.mockResolvedValue([
+        income(1, '2026-08-03T18:00:00Z', 1000, 1000, [400]),
+      ]);
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+      });
+
+      expect(row(report, 'Luis').cost_data_coverage).toBe(100);
+    });
+
+    /* Sin ventas no hay nada de qué calcular cobertura: null, no 0 ni 100. */
+    it('deja la cobertura en null cuando no hubo ventas', async () => {
+      prisma.employee.findMany.mockResolvedValue([LUIS, FELIX]);
+      prisma.income.findMany.mockResolvedValue([
+        income(1, '2026-08-03T18:00:00Z', 1000, 1000, [400]),
+      ]);
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+      });
+
+      expect(row(report, 'Félix')).toMatchObject({
+        sales_count: 0,
+        cogs: 0,
+        gross_profit: 0,
+        cost_data_coverage: null,
+      });
+      expect(row(report, 'unassigned').cost_data_coverage).toBeNull();
+    });
+
+    it('no pierde centavos al restar el costo', async () => {
+      prisma.employee.findMany.mockResolvedValue([LUIS]);
+      prisma.income.findMany.mockResolvedValue([
+        income(1, '2026-08-03T18:00:00Z', 0.3, 0.3, [0.1, 0.1]),
+      ]);
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+      });
+
+      expect(row(report, 'Luis').gross_profit).toBe(0.1);
     });
   });
 

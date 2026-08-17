@@ -145,6 +145,10 @@ export class ReportsController {
       'anterior. Las ventas de los días que ningún empleado activo tiene ' +
       'asignados van al renglón `unassigned`, que aparece siempre para que la ' +
       'suma se pueda comparar con `GET /reports/monthly`. ' +
+      'Incluye el costo de lo vendido y la utilidad bruta de cada turno, con ' +
+      '`cost_data_coverage` diciendo de cuántas de esas ventas se conoce el ' +
+      'costo: por debajo de 100 la utilidad es un techo, no una cifra firme. ' +
+      'Es utilidad de producto, no descuenta sueldos ni gastos de la tienda. ' +
       'Ojo: no hay historial de turnos —un mes pasado se recalcula con la ' +
       'asignación de días vigente hoy, no con la que hubiera entonces.',
   })

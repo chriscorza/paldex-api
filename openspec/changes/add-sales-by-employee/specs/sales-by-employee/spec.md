@@ -74,8 +74,16 @@ Cada renglón MUST incluir:
 - `net_sales` — la suma de `Income.net_amount` de las ventas del periodo que caen en esos días
 - `gross_sales` — la suma de `Income.gross_amount` de esas mismas ventas
 - `sales_count` — cuántos ingresos se sumaron
+- `cogs` — el costo de lo vendido esos días, tomado de `CostOfGoodsSold` ligado a cada venta
+- `gross_profit` — `net_sales` menos `cogs`
+- `sales_with_cost` — de cuántas de esas ventas se conoce el costo
+- `cost_data_coverage` — el porcentaje que representa sobre `sales_count`, `null` si no hubo ventas
 
-Los importes MUST devolverse como números, no como cadenas. Un empleado sin ventas en el periodo MUST aparecer con ceros, no omitirse. La suma de `net_sales` de todos los renglones —incluido `unassigned`— MUST coincidir con `net_sales` de `GET /reports/monthly` para el mismo periodo.
+Los importes MUST devolverse como números, no como cadenas. Un empleado sin ventas en el periodo MUST aparecer con ceros, no omitirse. La suma de `net_sales` de todos los renglones —incluido `unassigned`— MUST coincidir con `net_sales` de `GET /reports/monthly` para el mismo periodo, y lo mismo
+`cogs` y `gross_profit` con los suyos.
+
+`gross_profit` es utilidad **de producto**: no descuenta el sueldo del empleado ni el gasto de la
+tienda, así que no mide lo que el negocio gana con cada persona.
 
 El renglón `unassigned` recoge las ventas de los días que ningún empleado activo tiene asignados; MUST aparecer siempre, aunque venga en cero, para que el total se pueda comprobar.
 
@@ -93,6 +101,21 @@ El renglón `unassigned` recoge las ventas de los días que ningún empleado act
 
 - **WHEN** ningún empleado tiene asignado el día 3 y hubo ventas ese miércoles
 - **THEN** esas ventas se suman en el renglón `unassigned`
+
+#### Scenario: Costo y utilidad por turno
+
+- **WHEN** Luis vendió 1,500 con 600 de costo capturado
+- **THEN** su renglón trae `cogs: 600` y `gross_profit: 900`
+
+#### Scenario: Una venta sin costo capturado
+
+- **WHEN** de las dos ventas de un empleado sólo una tiene costo
+- **THEN** la venta sin costo no resta nada —su utilidad sale completa— pero el renglón declara `sales_with_cost: 1` y `cost_data_coverage: 50`, para que se vea que la utilidad va inflada
+
+#### Scenario: Empleado sin ventas
+
+- **WHEN** un empleado con días asignados no vendió nada en el periodo
+- **THEN** `cogs` y `gross_profit` salen en cero y `cost_data_coverage` es `null`, no cero
 
 #### Scenario: El total cuadra con el reporte mensual
 

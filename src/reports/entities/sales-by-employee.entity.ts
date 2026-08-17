@@ -55,6 +55,34 @@ export class SalesByEmployeeRowEntity {
   @ApiProperty({ description: 'Cuántos ingresos se sumaron.' })
   sales_count: number;
 
+  @ApiProperty({
+    description:
+      'Costo de lo vendido esos días, de `CostOfGoodsSold` ligado a cada venta.',
+  })
+  cogs: number;
+
+  @ApiProperty({
+    description:
+      'Ventas netas menos el costo de lo vendido. Es utilidad de producto: no ' +
+      'descuenta el sueldo del empleado ni el gasto de la tienda.',
+  })
+  gross_profit: number;
+
+  @ApiProperty({
+    description:
+      'De cuántas de esas ventas se conoce el costo. Si es menor que ' +
+      '`sales_count`, `gross_profit` va inflado.',
+  })
+  sales_with_cost: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Porcentaje de ventas con costo capturado. `null` si no hubo ventas. ' +
+      'Por debajo de 100 la utilidad es un techo, no una cifra firme.',
+  })
+  cost_data_coverage: number | null;
+
   constructor(partial: SalesByEmployeeRowEntity) {
     Object.assign(this, partial);
   }
@@ -69,6 +97,18 @@ export class SalesByEmployeeTotalsEntity {
 
   @ApiProperty()
   sales_count: number;
+
+  @ApiProperty()
+  cogs: number;
+
+  @ApiProperty()
+  gross_profit: number;
+
+  @ApiProperty()
+  sales_with_cost: number;
+
+  @ApiProperty({ nullable: true })
+  cost_data_coverage: number | null;
 
   constructor(partial: SalesByEmployeeTotalsEntity) {
     Object.assign(this, partial);
@@ -90,8 +130,8 @@ export class SalesByEmployeeReportEntity {
   @ApiProperty({
     type: SalesByEmployeeTotalsEntity,
     description:
-      'La suma de todos los renglones. Debe coincidir con el `net_sales` de ' +
-      '`GET /reports/monthly` del mismo periodo.',
+      'La suma de todos los renglones. `net_sales`, `cogs` y `gross_profit` ' +
+      'deben coincidir con los de `GET /reports/monthly` del mismo periodo.',
   })
   totals: SalesByEmployeeTotalsEntity;
 
