@@ -17,8 +17,13 @@ describe('ShopifyReconciliationService', () => {
   let graphql: any;
   let transactionSync: any;
 
+  /*
+   * El id va como GID porque es lo que devuelve GraphQL. Con un `'9999'` pelado
+   * —como estaba— los tests pasaban mientras producción duplicaba cada venta:
+   * el fixture no se parecía a lo que Shopify manda.
+   */
   const transaction = (over: Record<string, unknown> = {}) => ({
-    id: '9999',
+    id: 'gid://shopify/OrderTransaction/9999',
     kind: 'SALE',
     status: 'SUCCESS',
     amountSet: { shopMoney: { amount: '250.00' } },
@@ -109,6 +114,28 @@ describe('ShopifyReconciliationService', () => {
       1,
       expect.objectContaining({ id: '9999', order_id: '7904185221367' }),
     );
+  });
+
+  /*
+   * Los dos lados del GID, que es donde estuvo el daño: buscar por la forma
+   * equivocada no reconoce ningún cobro ya registrado y duplica cada venta que
+   * revisa; guardarla mal deja el duplicado imposible de reconocer la próxima
+   * vez.
+   */
+  it('busca el cobro por el id numérico, no por el GID', async () => {
+    await service.reconcileAll();
+
+    expect(prisma.income.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ external_transaction_id: '9999' }),
+      }),
+    );
+  });
+
+  it('no duplica un cobro que ya está registrado', async () => {
+    await service.reconcileAll();
+
+    expect(transactionSync.handleTransactionCreate).not.toHaveBeenCalled();
   });
 
   it('deja avanzar la marca de sincronía cuando no faltaba nada', async () => {

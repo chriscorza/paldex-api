@@ -112,23 +112,35 @@ export class ShopifyReconciliationService {
           if (kind !== 'sale' && kind !== 'capture') continue;
           if (status !== 'success') continue;
 
+          /*
+           * GraphQL devuelve el id como GID
+           * —`gid://shopify/OrderTransaction/9907187646711`— y el webhook, que
+           * habla REST, guarda el número pelado. Comparando el GID contra la
+           * columna, *ningún* cobro ya registrado se reconocía: la
+           * reconciliación los daba todos por perdidos y creaba un ingreso
+           * duplicado por cada venta que revisaba. Se compara y se guarda
+           * siempre en la forma numérica, la del webhook.
+           */
+          const transactionId = this.legacyId(txn.id);
+          if (!transactionId) continue;
+
           const existing = await this.prisma.income.findFirst({
             where: {
               source: 'shopify',
-              external_transaction_id: String(txn.id),
+              external_transaction_id: transactionId,
             },
             select: { id: true },
           });
 
           if (!existing) {
             this.logger.warn(
-              `Discrepancy: transaction ${txn.id} for order ${order.legacyResourceId} missing`,
+              `Discrepancy: transaction ${transactionId} for order ${order.legacyResourceId} missing`,
             );
             discrepancies++;
 
             try {
               await this.transactionSync.handleTransactionCreate(connectionId, {
-                id: txn.id,
+                id: transactionId,
                 kind: txn.kind,
                 status: txn.status,
                 amount: txn.amountSet?.shopMoney?.amount || '0',
@@ -136,10 +148,12 @@ export class ShopifyReconciliationService {
                 processed_at: txn.processedAt,
                 order_id: order.legacyResourceId,
               });
-              this.logger.log(`Backfilled income for transaction ${txn.id}`);
+              this.logger.log(
+                `Backfilled income for transaction ${transactionId}`,
+              );
             } catch (err) {
               this.logger.error(
-                `Failed to backfill income for transaction ${txn.id}`,
+                `Failed to backfill income for transaction ${transactionId}`,
                 err,
               );
             }
@@ -152,5 +166,16 @@ export class ShopifyReconciliationService {
     }
 
     return discrepancies;
+  }
+
+  /*
+   * `gid://shopify/OrderTransaction/123` → `123`, que es lo que guarda el
+   * webhook. Acepta también el número ya pelado: si Shopify cambiara de forma,
+   * más vale reconocerlo que descartar el cobro en silencio.
+   */
+  private legacyId(gid: unknown): string | null {
+    if (!gid) return null;
+    const match = /(?:^|\/)(\d+)(?:\?.*)?$/.exec(String(gid));
+    return match ? match[1] : null;
   }
 }
