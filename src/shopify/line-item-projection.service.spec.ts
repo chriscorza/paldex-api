@@ -10,16 +10,20 @@ describe('LineItemProjectionService — reparto del costo a los ingresos', () =>
   let prisma: any;
   let service: LineItemProjectionService;
 
-  const setup = (incomes: any[], totalCost: number | null) => {
+  const setup = (
+    incomes: any[],
+    totalCost: number | null,
+    grossSales: number | null = null,
+  ) => {
     prisma = {
       income: {
         findMany: jest.fn().mockResolvedValue(incomes),
         update: jest.fn(),
       },
       shopifyLineItem: {
-        aggregate: jest
-          .fn()
-          .mockResolvedValue({ _sum: { total_cost: totalCost } }),
+        aggregate: jest.fn().mockResolvedValue({
+          _sum: { total_cost: totalCost, gross_sales: grossSales },
+        }),
       },
       shopifyOrder: {
         findUnique: jest.fn().mockResolvedValue({ order_number: 1001 }),
@@ -128,6 +132,51 @@ describe('LineItemProjectionService — reparto del costo a los ingresos', () =>
 
     expect(prisma.shopifyLineItem.aggregate).not.toHaveBeenCalled();
     expect(prisma.income.update).not.toHaveBeenCalled();
+  });
+
+  /*
+   * El bruto real de la venta vive en los artículos, no en el importe cobrado:
+   * éste ya llega con los descuentos. Aquí se verifica que `gross_amount` se
+   * derive de ahí y no se quede pegado al neto.
+   */
+  it('reparte el bruto del pedido entre sus pagos', async () => {
+    setup(
+      [
+        { id: 50, net_amount: 300 },
+        { id: 51, net_amount: 100 },
+      ],
+      200,
+      600,
+    );
+
+    await service.propagateToIncomes(3);
+
+    const grosses = prisma.income.update.mock.calls
+      .map((c: any[]) => c[0].data.gross_amount)
+      .filter((g: any) => g !== undefined);
+    expect(grosses).toEqual([450, 150]);
+  });
+
+  it('deja el bruto por encima del neto cuando hubo descuento', async () => {
+    setup([{ id: 50, net_amount: 180 }], 100, 200);
+
+    await service.propagateToIncomes(3);
+
+    expect(prisma.income.update).toHaveBeenCalledWith({
+      where: { id: 50 },
+      data: { gross_amount: 200 },
+    });
+  });
+
+  it('no pisa el bruto si el pedido no tiene artículos proyectados', async () => {
+    setup([{ id: 50, net_amount: 598.94 }], 300, null);
+
+    await service.propagateToIncomes(3);
+
+    const grossUpdates = prisma.income.update.mock.calls.filter((c: any[]) =>
+      Object.prototype.hasOwnProperty.call(c[0].data, 'gross_amount'),
+    );
+    expect(grossUpdates).toHaveLength(0);
   });
 });
 

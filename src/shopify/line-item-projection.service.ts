@@ -293,12 +293,34 @@ export class LineItemProjectionService {
 
     if (incomes.length === 0) return;
 
-    const cogsAgg = await this.prisma.shopifyLineItem.aggregate({
+    const agg = await this.prisma.shopifyLineItem.aggregate({
       where: { shopify_order_id: orderId },
-      _sum: { total_cost: true },
+      _sum: { total_cost: true, gross_sales: true },
     });
 
-    const cogsTotal = cogsAgg._sum.total_cost;
+    const cogsTotal = agg._sum.total_cost;
+    const grossTotal = agg._sum.gross_sales;
+
+    /*
+     * El bruto de una venta de Shopify no es el importe cobrado: ese ya llega
+     * con los descuentos aplicados. El bruto de verdad —precio por cantidad,
+     * antes de descuentos— sólo vive en los artículos, así que se reparte entre
+     * los ingresos del pedido a prorrata del neto, igual que el costo. Sin
+     * esto, `gross_amount` se quedaba en `net_amount` y todo reporte que
+     * distinguiera bruto y neto los mostraba idénticos.
+     */
+    if (grossTotal !== null && grossTotal !== undefined) {
+      const gross = new Decimal(grossTotal);
+      if (gross.greaterThan(0)) {
+        const grossShares = this.splitByNetAmount(gross, incomes);
+        for (const [index, income] of incomes.entries()) {
+          await this.prisma.income.update({
+            where: { id: income.id },
+            data: { gross_amount: grossShares[index].toNumber() },
+          });
+        }
+      }
+    }
 
     /* Pedido sin ningún costo conocido: se limpia lo que hubiera de antes. */
     if (cogsTotal === null || cogsTotal === undefined) {
@@ -319,7 +341,7 @@ export class LineItemProjectionService {
       select: { order_number: true },
     });
 
-    const shares = this.splitCostByNetAmount(new Decimal(cogsTotal), incomes);
+    const shares = this.splitByNetAmount(new Decimal(cogsTotal), incomes);
 
     for (const [index, income] of incomes.entries()) {
       const share = shares[index];
@@ -368,12 +390,12 @@ export class LineItemProjectionService {
 
   /*
    * Un pedido cobrado en varias transacciones crea un income por cada una. El
-   * costo se reparte a prorrata del neto de cada uno; darle el total del pedido
-   * a cada income —lo que se hacía antes— multiplicaba el COGS por el número de
-   * pagos. El resto de los centavos va al último para que la suma cuadre exacta
-   * con el costo del pedido.
+   * costo y el bruto se reparten a prorrata del neto de cada uno; darle el
+   * total del pedido a cada income —lo que se hacía antes— multiplicaba el
+   * COGS por el número de pagos. El resto de los centavos va al último para que
+   * la suma cuadre exacta con el total del pedido.
    */
-  private splitCostByNetAmount(
+  private splitByNetAmount(
     total: Decimal,
     incomes: { net_amount: unknown }[],
   ): Decimal[] {
