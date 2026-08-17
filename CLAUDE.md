@@ -84,6 +84,29 @@ Set `REPORTS_TIMEZONE` to an IANA name to change it; it defaults to `America/Mex
 This matters when reconciling against Shopify: its sales reports use the shop's zone, so filtering
 in UTC shifts a Mexican shop's month by 6 hours and drops the last (busiest) evening of it.
 
+## Sales attributed to employees
+
+`Employee.sales_days` holds the weekdays whose sales belong to that employee (`1` = Monday …
+`7` = Sunday, ISO-8601; `null`/`[]` means none). `GET /reports/sales-by-employee` reports
+`net_sales`, `gross_sales` and `sales_count` per employee for a month — current month by default,
+`year`+`month` for any earlier one.
+
+- **The weekday is computed in the business time zone** via `weekdayInZone()`, never `getDay()`:
+  in CDMX a 19:00 Friday sale is Saturday in UTC and would be credited to the weekend shift.
+- **Grouping happens in Node, not SQL.** `CONVERT_TZ` needs MySQL's timezone tables loaded, which
+  the `mysql:8.4` image does not ship — without them it returns `NULL` and the report silently
+  reads zero.
+- **A day belongs to at most one *active* employee.** MySQL can't enforce that over a JSON column,
+  so `EmployeesService` checks it inside the writing transaction — on create, on `sales_days`
+  edits, **and on reactivation**, since reactivating an inactive employee also claims their days.
+  Inactive employees don't hold days.
+- **The `unassigned` row is always present**, even at zero: the sum of all rows must equal
+  `net_sales` from `GET /reports/monthly`, and a day with no owner would otherwise drop sales out
+  of the total with nothing to show for it. The report deliberately does not filter by
+  `income_type`, for the same reason.
+- **There is no shift history**: a past month is recomputed with today's assignment. If two
+  employees swap days, earlier reports change with them.
+
 ## Scheduled jobs
 
 `src/jobs/scheduled-jobs.service.ts` runs three crons in-process via `@nestjs/schedule`

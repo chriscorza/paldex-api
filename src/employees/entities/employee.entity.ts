@@ -16,6 +16,7 @@ export class EmployeeEntity {
   ended_at: Date | null;
   active: boolean;
   user_id: number;
+  sales_days: number[] | null;
 
   constructor(partial: any) {
     this.id = partial.id;
@@ -34,7 +35,27 @@ export class EmployeeEntity {
     this.ended_at = partial.ended_at ?? null;
     this.active = partial.active;
     this.user_id = partial.user_id;
+    /*
+     * El nulo se conserva: un empleado dado de alta antes de que existieran los
+     * turnos no es lo mismo que uno al que se le quitaron todos los días.
+     */
+    this.sales_days = Array.isArray(partial.sales_days)
+      ? parseSalesDays(partial.sales_days)
+      : null;
   }
+}
+
+/*
+ * La columna es JSON, así que Prisma la devuelve como `JsonValue`: lo que salga
+ * de ahí no está tipado y podría no ser un array de enteros. Se normaliza aquí
+ * —ordenada y sin basura— para que el resto del código, incluido el reporte de
+ * ventas por empleado, pueda asumir `number[]` sin volver a comprobarlo.
+ */
+export function parseSalesDays(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((d): d is number => Number.isInteger(d) && d >= 1 && d <= 7)
+    .sort((a, b) => a - b);
 }
 
 export const EMPLOYEE_PUBLIC_SELECT = {
@@ -53,4 +74,5 @@ export const EMPLOYEE_PUBLIC_SELECT = {
   ended_at: true,
   active: true,
   user_id: true,
+  sales_days: true,
 } as const;

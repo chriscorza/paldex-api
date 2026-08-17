@@ -7,6 +7,8 @@ import {
   IsNumber,
   IsDateString,
   IsBoolean,
+  IsArray,
+  ArrayUnique,
   Min,
   Max,
   Validate,
@@ -115,6 +117,21 @@ export class CreateEmployeeDto {
   @IsBoolean()
   active?: boolean;
 
+  @ApiPropertyOptional({
+    type: [Number],
+    description:
+      'Días de la semana cuyas ventas se le atribuyen: 1 = lunes … 7 = domingo. ' +
+      'Vacío significa que no se le atribuye ninguna venta.',
+    example: [1, 2, 3, 4, 5],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(7, { each: true })
+  sales_days?: number[];
+
   @Validate(PayDayCoherenceConstraint)
   _validatePayDay: any;
 }
@@ -193,6 +210,21 @@ export class UpdateEmployeeDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional({
+    type: [Number],
+    description:
+      'Días de la semana cuyas ventas se le atribuyen: 1 = lunes … 7 = domingo. ' +
+      'Una lista vacía le quita todos los días.',
+    example: [6, 7],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(7, { each: true })
+  sales_days?: number[];
 }
 
 export class FilterEmployeesDto {

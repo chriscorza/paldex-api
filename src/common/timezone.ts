@@ -151,6 +151,37 @@ export function currentMonthInZone(timeZone: string = reportsTimeZone()): {
   return { year: Number(parts.year), month: Number(parts.month) };
 }
 
+const ISO_WEEKDAYS: Record<string, number> = {
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+  Sun: 7,
+};
+
+/*
+ * Qué día de la semana fue esa venta para la tienda: 1 = lunes … 7 = domingo.
+ *
+ * No se usa `getDay()`: lee la zona del servidor —UTC dentro del contenedor—, y
+ * una venta de las 19:00 del viernes en CDMX ya es sábado en UTC. Con el turno
+ * de lunes a viernes de una persona y el de fin de semana de otra, esa venta se
+ * le acreditaba a quien no la hizo, y justo las de la tarde del viernes son las
+ * que más pesan.
+ */
+export function weekdayInZone(
+  instant: Date,
+  timeZone: string = reportsTimeZone(),
+): number {
+  const short = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    weekday: 'short',
+  }).format(instant);
+
+  return ISO_WEEKDAYS[short];
+}
+
 export function monthRangeInZone(
   year: number,
   month: number,

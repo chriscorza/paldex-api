@@ -1,5 +1,10 @@
 import { Controller, Get, Query, Req, Post, Body, Res } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { OwnershipContext } from '../common/ownership';
@@ -9,6 +14,9 @@ import { ShopifyProfitabilityService } from './shopify-profitability.service';
 import { ComparisonService } from './comparison.service';
 import { MonthlyReportQueryDto } from './dto/report-query.dto';
 import { ShopifyReportQueryDto } from './dto/shopify-report-query.dto';
+import { SalesByEmployeeQueryDto } from './dto/sales-by-employee-query.dto';
+import { SalesByEmployeeService } from './sales-by-employee.service';
+import { SalesByEmployeeReportEntity } from './entities/sales-by-employee.entity';
 import { BadRequestException } from '@nestjs/common';
 import { LineItemProjectionService } from '../shopify/line-item-projection.service';
 import { escapeCsvField } from '../common/csv';
@@ -29,6 +37,7 @@ export class ReportsController {
     private readonly shopifyService: ShopifyProfitabilityService,
     private readonly comparisonService: ComparisonService,
     private readonly lineItemProjection: LineItemProjectionService,
+    private readonly salesByEmployeeService: SalesByEmployeeService,
   ) {}
 
   @Get('monthly')
@@ -124,6 +133,32 @@ export class ReportsController {
     };
     const { startDate, endDate } = this.resolveDateRange(query);
     return this.aggregation.getSalesWithoutCost(ctx, startDate, endDate);
+  }
+
+  @Get('sales-by-employee')
+  @ApiOperation({
+    summary: 'Ventas del periodo atribuidas a cada empleado',
+    description:
+      'Reparte las ventas según el día de la semana que cada empleado tiene en ' +
+      '`sales_days` —el día se calcula en la zona del negocio, no en UTC—. Sin ' +
+      'parámetros devuelve el mes en curso; con `year` y `month`, cualquier mes ' +
+      'anterior. Las ventas de los días que ningún empleado activo tiene ' +
+      'asignados van al renglón `unassigned`, que aparece siempre para que la ' +
+      'suma se pueda comparar con `GET /reports/monthly`. ' +
+      'Ojo: no hay historial de turnos —un mes pasado se recalcula con la ' +
+      'asignación de días vigente hoy, no con la que hubiera entonces.',
+  })
+  @ApiOkResponse({ type: SalesByEmployeeReportEntity })
+  async salesByEmployee(
+    @CurrentUser() user: { id: number },
+    @Req() request: any,
+    @Query() query: SalesByEmployeeQueryDto,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: (request as any).permissionScope || 'OWN',
+    };
+    return this.salesByEmployeeService.getSalesByEmployee(ctx, query);
   }
 
   @Get('shopify/category-profitability')

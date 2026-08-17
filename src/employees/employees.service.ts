@@ -13,9 +13,10 @@ import {
 import {
   EmployeeEntity,
   EMPLOYEE_PUBLIC_SELECT,
+  parseSalesDays,
 } from './entities/employee.entity';
 import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
-import { PayFrequency } from '@prisma/client';
+import { PayFrequency, Prisma } from '@prisma/client';
 import { startOfDayInZone, endOfDayInZone } from '../common/timezone';
 
 @Injectable()
@@ -70,31 +71,47 @@ export class EmployeesService {
       await this.validateAccount(ctx, dto.default_payment_account_id);
     }
 
-    const employee = await this.prisma.employee.create({
-      data: {
-        name: dto.name,
-        position: dto.position ?? null,
-        salary_type: dto.salary_type ?? 'SALARIED',
-        pay_frequency: dto.pay_frequency,
-        base_salary: dto.base_salary,
-        weekly_pay_day: dto.weekly_pay_day ?? null,
-        biweekly_first_day: dto.biweekly_first_day ?? null,
-        biweekly_second_day: dto.biweekly_second_day ?? null,
-        monthly_pay_day: dto.monthly_pay_day ?? null,
-        default_payment_account_id: dto.default_payment_account_id ?? null,
-        started_at: dto.started_at
-          ? startOfDayInZone(dto.started_at)
-          : new Date(),
-        /*
-         * Fin de jornada, no medianoche: `ended_at` es el último día que se
-         * trabajó, y con la medianoche el pago de ese mismo día caía fuera.
-         */
-        ended_at: dto.ended_at ? endOfDayInZone(dto.ended_at) : null,
-        active: dto.active ?? true,
-        user_id: ctx.userId,
-      },
-      select: EMPLOYEE_PUBLIC_SELECT,
+    const active = dto.active ?? true;
+
+    /*
+     * La comprobación de solape y la escritura van en la misma transacción: si
+     * no, dos altas simultáneas pasan las dos la comprobación y acaban con el
+     * mismo día repartido entre dos personas, que es justo lo que haría contar
+     * esas ventas dos veces en el reporte.
+     */
+    const employee = await this.prisma.$transaction(async (tx) => {
+      if (active && dto.sales_days?.length) {
+        await this.validateSalesDaysExclusivity(tx, ctx.userId, dto.sales_days);
+      }
+
+      return tx.employee.create({
+        data: {
+          name: dto.name,
+          position: dto.position ?? null,
+          salary_type: dto.salary_type ?? 'SALARIED',
+          pay_frequency: dto.pay_frequency,
+          base_salary: dto.base_salary,
+          weekly_pay_day: dto.weekly_pay_day ?? null,
+          biweekly_first_day: dto.biweekly_first_day ?? null,
+          biweekly_second_day: dto.biweekly_second_day ?? null,
+          monthly_pay_day: dto.monthly_pay_day ?? null,
+          default_payment_account_id: dto.default_payment_account_id ?? null,
+          started_at: dto.started_at
+            ? startOfDayInZone(dto.started_at)
+            : new Date(),
+          /*
+           * Fin de jornada, no medianoche: `ended_at` es el último día que se
+           * trabajó, y con la medianoche el pago de ese mismo día caía fuera.
+           */
+          ended_at: dto.ended_at ? endOfDayInZone(dto.ended_at) : null,
+          active,
+          user_id: ctx.userId,
+          sales_days: dto.sales_days ?? Prisma.DbNull,
+        },
+        select: EMPLOYEE_PUBLIC_SELECT,
+      });
     });
+
     return new EmployeeEntity(employee);
   }
 
@@ -130,15 +147,94 @@ export class EmployeesService {
     if (dto.ended_at !== undefined)
       updateData.ended_at = dto.ended_at ? new Date(dto.ended_at) : null;
     if (dto.active !== undefined) updateData.active = dto.active;
+    if (dto.sales_days !== undefined) updateData.sales_days = dto.sales_days;
 
     this.validatePayDayCoherence({ ...existing, ...updateData });
 
-    const employee = await this.prisma.employee.update({
-      where: { id },
-      data: updateData,
-      select: EMPLOYEE_PUBLIC_SELECT,
+    /*
+     * Con qué días y en qué estado queda el empleado después de esta edición:
+     * lo que no venga en el body se queda como estaba.
+     */
+    const resultingDays =
+      dto.sales_days !== undefined
+        ? dto.sales_days
+        : parseSalesDays(existing.sales_days);
+    const resultingActive =
+      dto.active !== undefined ? dto.active : existing.active;
+
+    /*
+     * Reactivar también reclama días. Sin esta segunda condición, un empleado
+     * inactivo con el fin de semana asignado se reactivaba sin más y el reporte
+     * pasaba a contar dos veces las ventas del sábado y el domingo.
+     */
+    const claimsDays =
+      resultingActive &&
+      resultingDays.length > 0 &&
+      (dto.sales_days !== undefined ||
+        (dto.active === true && !existing.active));
+
+    const employee = await this.prisma.$transaction(async (tx) => {
+      if (claimsDays) {
+        await this.validateSalesDaysExclusivity(
+          tx,
+          existing.user_id,
+          resultingDays,
+          id,
+        );
+      }
+
+      return tx.employee.update({
+        where: { id },
+        data: updateData,
+        select: EMPLOYEE_PUBLIC_SELECT,
+      });
     });
+
     return new EmployeeEntity(employee);
+  }
+
+  /*
+   * Un día pertenece como mucho a un empleado activo: si dos lo reclaman, sus
+   * ventas se suman en los dos renglones del reporte y el total deja de cuadrar
+   * con el reporte mensual.
+   *
+   * La unicidad no la puede imponer MySQL sobre una columna JSON, así que se
+   * comprueba aquí, dentro de la transacción que escribe. Los inactivos no
+   * bloquean días —quien ya no trabaja no tiene turno—, pero reactivarlos sí
+   * vuelve a pasar por aquí.
+   *
+   * El dueño se recibe explícito y no sale de `buildOwnerFilter`: con alcance
+   * `ANY` ese filtro va vacío, y el lunes de un negocio chocaría con el lunes de
+   * otro. Los turnos sólo compiten entre los empleados de un mismo dueño.
+   */
+  private async validateSalesDaysExclusivity(
+    tx: Prisma.TransactionClient,
+    ownerId: number,
+    days: number[],
+    excludeEmployeeId?: number,
+  ) {
+    const others = await tx.employee.findMany({
+      where: {
+        user_id: ownerId,
+        active: true,
+        ...(excludeEmployeeId ? { id: { not: excludeEmployeeId } } : {}),
+      },
+      select: { id: true, name: true, sales_days: true },
+    });
+
+    const wanted = new Set(days);
+
+    for (const other of others) {
+      const taken = parseSalesDays(other.sales_days).filter((d) =>
+        wanted.has(d),
+      );
+      if (taken.length > 0) {
+        throw new ConflictException(
+          `Los días [${taken.join(', ')}] ya están asignados a ${other.name}. ` +
+            'Un día sólo puede pertenecer a un empleado activo.',
+        );
+      }
+    }
   }
 
   async remove(ctx: OwnershipContext, id: number) {

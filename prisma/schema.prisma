@@ -472,6 +472,15 @@ model Employee {
   active                     Boolean      @default(true)
   user_id                    Int
 
+  /*
+   * Los días de la semana cuyas ventas se le atribuyen: 1 = lunes … 7 = domingo.
+   * Nulo o vacío = no se le atribuye ninguna venta.
+   *
+   * MySQL no puede imponer «un día, un empleado» sobre una columna JSON, así que
+   * la exclusividad la valida `EmployeesService` dentro de una transacción.
+   */
+  sales_days                 Json?
+
   user                       User         @relation(fields: [user_id], references: [id])
   default_payment_account    Account?     @relation(fields: [default_payment_account_id], references: [id])
   payments                   PayrollPayment[]
