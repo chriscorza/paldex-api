@@ -77,7 +77,6 @@ export class ShopifyReconciliationService {
                 amountSet { shopMoney { amount } }
                 gateway
                 processedAt
-                parentId
               }
             }
           }
