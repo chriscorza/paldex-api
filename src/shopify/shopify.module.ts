@@ -28,6 +28,7 @@ import { PrismaModule } from 'src/prisma.module';
     ShopifyConnectionService,
     ShopifyGraphQLService,
     LineItemProjectionService,
+    ShopifyReconciliationService,
   ],
 })
 export class ShopifyModule {}

@@ -3,6 +3,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './auth/auth.guard';
 import { PermissionsGuard } from './auth/permissions.guard';
@@ -26,6 +27,7 @@ import { PayablesModule } from './payables/payables.module';
 import { ReceivablesModule } from './receivables/receivables.module';
 import { MonthlyCloseModule } from './monthly-close/monthly-close.module';
 import { InvitationsModule } from './invitations/invitations.module';
+import { JobsModule } from './jobs/jobs.module';
 import { AdminBootstrapService } from './admin-bootstrap.service';
 import { DataSeedService } from './data-seed.service';
 import { PrismaModule } from './prisma.module';
@@ -57,6 +59,14 @@ import { PrismaModule } from './prisma.module';
     ReceivablesModule,
     MonthlyCloseModule,
     InvitationsModule,
+    /*
+     * Réplica única: `ScheduleModule` corre los crons en cada proceso, así que
+     * levantar una segunda instancia de la API duplicaría cada corrida. La
+     * generación aguanta el duplicado —salta lo que ya existe— pero la
+     * reconciliación llamaría a Shopify dos veces por hora sin necesidad.
+     */
+    ScheduleModule.forRoot(),
+    JobsModule,
   ],
   controllers: [AppController],
   providers: [

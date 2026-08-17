@@ -84,6 +84,34 @@ Set `REPORTS_TIMEZONE` to an IANA name to change it; it defaults to `America/Mex
 This matters when reconciling against Shopify: its sales reports use the shop's zone, so filtering
 in UTC shifts a Mexican shop's month by 6 hours and drops the last (busiest) evening of it.
 
+## Scheduled jobs
+
+`src/jobs/scheduled-jobs.service.ts` runs three crons in-process via `@nestjs/schedule`
+(registered in `app.module.ts` with `ScheduleModule.forRoot()`):
+
+| Job | Cron | Zone |
+|---|---|---|
+| Payroll generation | `0 6 * * *` | business (`reportsTimeZone()`) |
+| Recurring-expense generation | `5 6 * * *` | business |
+| Shopify reconciliation | `20 * * * *` | UTC (hourly, zone is irrelevant) |
+
+Conventions to keep if you add another one:
+
+- **Run per owner, not globally.** `RecurringExpensesService.generate` writes `user_id: ctx.userId`
+  on every row it creates, so a single `scope: 'ANY'` context would attribute other people's
+  expenses to whoever the job pretends to be. The jobs `distinct: ['user_id']` over the owning
+  model and call the service once per owner with `scope: 'OWN'`.
+- **The window overlaps on purpose** — 7 days back, 45 days forward. Both generators skip what
+  already exists (unique-index clash → `P2002`), so re-running a range is free, and the lookback
+  is what lets a day of downtime heal itself instead of leaving a payroll period missing forever.
+- **Never pass `already_paid`.** That flag is only for loading history by hand.
+- The crons must not run on more than one replica: `ScheduleModule` fires in every process.
+
+`SCHEDULED_JOBS_ENABLED=false` turns all three off. It is read at call time, not at module
+definition — `ConfigModule` loads `.env.prod` into `process.env` after decorators are evaluated,
+so reading it earlier would miss the production value. Absent variable means enabled: forgetting
+it on a deploy and silently not generating payroll is the worse failure.
+
 ## ISR estimate
 
 Set `ISR_ESTIMATE_PERCENTAGE` env var to a number (e.g., `30`) to enable ISR estimation.
