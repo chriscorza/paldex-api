@@ -112,11 +112,21 @@ export class ShopifyOrderSyncService {
       if (dbOrder) {
         await this.projection.projectOrder(dbOrder.id);
 
+        /*
+         * El prefijo tiene que incluir el `order:` literal: la referencia que
+         * escribe `ShopifyTransactionSyncService` es
+         * `order:<gid>|gateway:<gw>`, no el gid pelado. Buscando por el gid
+         * solo, el `startsWith` no casaba nunca y ningún ingreso se enganchaba
+         * —los pedidos en vivo quedaban sin cobro y sin COGS, porque Shopify
+         * entrega `order_transactions/create` antes que `orders/create`. El
+         * backfill se salvaba de milagro: crea el pedido antes que el cobro,
+         * así que el ingreso ya nace ligado y nunca pasa por aquí.
+         */
         const orphanIncomes = await this.prisma.income.findMany({
           where: {
             source: 'shopify',
             shopify_order_id: null,
-            external_reference: { startsWith: `${externalId}` },
+            external_reference: { startsWith: `order:${externalId}` },
           },
           select: { id: true },
         });
