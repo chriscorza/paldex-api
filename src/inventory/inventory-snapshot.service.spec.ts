@@ -19,6 +19,7 @@ const nivel = (over: Partial<any> = {}) => ({
   quantity_on_hand: 10,
   tracked: true,
   shopify_unit_cost: 75,
+  shopify_unit_price: 120,
   ...over,
 });
 
@@ -185,6 +186,52 @@ describe('InventorySnapshotService', () => {
       expect(cierre().products_valued).toBe(1);
       expect(cierre().total_units).toBe(15);
       expect(cierre().total_cost.toString()).toBe('1125');
+    });
+  });
+
+  describe('valor de venta', () => {
+    it('valúa las existencias al precio de lista además del costo', async () => {
+      sync.fetchInventory.mockResolvedValue([
+        nivel({
+          quantity_on_hand: 10,
+          shopify_unit_cost: 75,
+          shopify_unit_price: 120,
+        }),
+      ]);
+
+      await service.capture(7, 1);
+
+      const [item] = itemsEscritos();
+      expect(item.unit_price.toString()).toBe('120');
+      expect(item.total_price.toString()).toBe('1200');
+      expect(cierre().retail_value.toString()).toBe('1200');
+      expect(cierre().total_cost.toString()).toBe('750');
+    });
+
+    it('no inventa precio cuando Shopify no lo trae', async () => {
+      sync.fetchInventory.mockResolvedValue([
+        nivel({ shopify_unit_price: null }),
+      ]);
+
+      await service.capture(7, 1);
+
+      const [item] = itemsEscritos();
+      expect(item.unit_price).toBeNull();
+      expect(item.total_price).toBeNull();
+      expect(cierre().retail_value.toString()).toBe('0');
+    });
+
+    it('no calcula valor de venta sin existencia conocida', async () => {
+      sync.fetchInventory.mockResolvedValue([
+        nivel({ tracked: false, quantity_on_hand: null }),
+      ]);
+
+      await service.capture(7, 1);
+
+      const [item] = itemsEscritos();
+      /* Se sabe a cuánto se vende la pieza, no cuántas hay. */
+      expect(item.unit_price.toString()).toBe('120');
+      expect(item.total_price).toBeNull();
     });
   });
 

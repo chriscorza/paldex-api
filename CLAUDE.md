@@ -152,6 +152,11 @@ This one values what is **left**.
 - **Snapshots are history, never overwritten.** Inventory value is a balance-sheet figure *at a
   date*; overwriting it loses the answer to "what was it worth on July 31st", which is what a
   monthly close needs and what makes COGS-by-inventory-difference possible later.
+- **The same stock is valued twice**: at cost (`total_cost`) and at Shopify's list price
+  (`retail_value`), with `potential_profit` as the gap. The retail figure is a *ceiling* — it assumes
+  selling every last unit at list with no discount — so `products_priced` is published beside it the
+  way `cost_coverage` guards the cost side. Price comes from `ProductVariant.price` and only there,
+  never from `ProductCost` or from what the thing sold for before.
 - **The cost is frozen into the row at capture time**, not recomputed on read. Otherwise fixing a
   `ProductCost` today would silently change July's valuation.
 - **Cost precedence mirrors `resolveLineItemCost`**: `ProductCost` by variant → by SKU → Shopify's

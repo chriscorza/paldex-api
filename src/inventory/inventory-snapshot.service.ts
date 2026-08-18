@@ -27,6 +27,8 @@ interface ValuedRow extends InventoryLevelRow {
   unit_cost: Decimal | null;
   total_cost: Decimal | null;
   cost_source: InventoryCostSource | null;
+  unit_price: Decimal | null;
+  total_price: Decimal | null;
 }
 
 /*
@@ -123,6 +125,8 @@ export class InventorySnapshotService {
             unit_cost: row.unit_cost,
             total_cost: row.total_cost,
             cost_source: row.cost_source,
+            unit_price: row.unit_price,
+            total_price: row.total_price,
           })),
         });
       }
@@ -186,11 +190,27 @@ export class InventorySnapshotService {
         ? null
         : unitCost.times(row.quantity_on_hand);
 
+    /*
+     * El precio de lista es de Shopify y sólo de ahí: es lo que la tienda pide
+     * hoy por la pieza, sin descuentos ni promociones. No se cruza con
+     * `ProductCost`, que es la otra mitad del par —lo que costó, no lo que vale.
+     */
+    const unitPrice =
+      row.shopify_unit_price === null
+        ? null
+        : new Decimal(row.shopify_unit_price);
+    const totalPrice =
+      unitPrice === null || row.quantity_on_hand === null
+        ? null
+        : unitPrice.times(row.quantity_on_hand);
+
     return {
       ...row,
       unit_cost: unitCost,
       total_cost: totalCost,
       cost_source: source,
+      unit_price: unitPrice,
+      total_price: totalPrice,
     };
   }
 
@@ -273,6 +293,7 @@ export class InventorySnapshotService {
   private totals(rows: ValuedRow[]) {
     let totalUnits = 0;
     let totalCost = new Decimal(0);
+    let retailValue = new Decimal(0);
     const valued = new Set<string>();
     const withoutCost = new Set<string>();
     const untracked = new Set<string>();
@@ -281,6 +302,8 @@ export class InventorySnapshotService {
       const key = row.shopify_variant_id ?? row.sku ?? row.title;
       if (row.quantity_on_hand !== null) totalUnits += row.quantity_on_hand;
       if (row.total_cost !== null) totalCost = totalCost.add(row.total_cost);
+      if (row.total_price !== null)
+        retailValue = retailValue.add(row.total_price);
       if (row.unit_cost === null) withoutCost.add(key);
       else valued.add(key);
       if (!row.tracked) untracked.add(key);
@@ -289,6 +312,7 @@ export class InventorySnapshotService {
     return {
       total_units: totalUnits,
       total_cost: totalCost,
+      retail_value: retailValue,
       products_valued: valued.size,
       products_without_cost: withoutCost.size,
       variants_untracked: untracked.size,

@@ -12,12 +12,14 @@ const variante = (
     variantTitle?: string;
     tracked?: boolean;
     unitCost?: string | null;
+    price?: string | null;
     levels?: { location: string; onHand: number }[];
   } = {},
 ) => ({
   id,
   sku: opciones.sku === undefined ? 'SKU-1' : opciones.sku,
   title: opciones.variantTitle ?? 'Default Title',
+  price: opciones.price === undefined ? '140.00' : opciones.price,
   product: {
     id: 'gid://shopify/Product/1',
     title: opciones.productTitle ?? 'Collar rojo',
@@ -96,6 +98,7 @@ describe('ShopifyInventorySyncService', () => {
         quantity_on_hand: 12,
         tracked: true,
         shopify_unit_cost: 85,
+        shopify_unit_price: 140,
       },
     ]);
   });
@@ -224,6 +227,22 @@ describe('ShopifyInventorySyncService', () => {
     const [row] = await service.fetchInventory(1);
 
     expect(row.title).toBe('Arnés - Talla M');
+  });
+
+  it('trae el precio de lista junto con el costo', async () => {
+    graphql.graphql.mockResolvedValue(pagina([]));
+    await service.fetchInventory(1);
+    expect(graphql.graphql.mock.calls[0][1]).toContain('price');
+  });
+
+  it('deja el precio nulo cuando la variante no lo trae', async () => {
+    graphql.graphql.mockResolvedValue(
+      pagina([variante('gid://shopify/ProductVariant/1', { price: null })]),
+    );
+
+    const [row] = await service.fetchInventory(1);
+
+    expect(row.shopify_unit_price).toBeNull();
   });
 
   it('deja el costo nulo cuando Shopify no lo trae', async () => {

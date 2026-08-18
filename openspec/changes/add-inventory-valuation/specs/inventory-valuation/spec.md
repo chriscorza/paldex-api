@@ -86,6 +86,34 @@ Cada renglón SHALL publicar de dónde salió su costo. Un renglón sin ningún 
 - **WHEN** existe un `ProductCost` cuyo `effective_from` es posterior a `taken_at` de la foto
 - **THEN** el avalúo ignora ese costo y usa el vigente a la fecha de la foto
 
+### Requirement: Valor de venta del inventario
+
+Además del costo, el sistema SHALL valuar las existencias al **precio de lista** de Shopify: lo que la tienda pide hoy por la pieza, sin descuentos ni promociones aplicadas. El precio SHALL congelarse en el renglón al tomar la foto, igual que el costo.
+
+El reporte SHALL publicar `retail_value` —la suma de piezas × precio—, `potential_profit` —`retail_value` menos el costo— y `potential_margin`. Estas cifras son un **techo**: suponen vender hasta la última pieza a precio de lista. El sistema SHALL publicar además cuántos productos tienen precio conocido, porque sin uno el valor de venta va corto.
+
+El precio MUST NOT tomarse de `ProductCost` ni de las ventas anteriores: es dato de Shopify y sólo de ahí.
+
+#### Scenario: Existencias valuadas a precio de lista
+
+- **WHEN** un producto tiene 10 piezas, costo unitario de 85 y precio de lista de 140
+- **THEN** el renglón reporta 1 400 de valor de venta contra 850 de costo, y los totales reportan 550 de ganancia potencial
+
+#### Scenario: Producto sin precio en Shopify
+
+- **WHEN** una variante no trae precio de lista
+- **THEN** su valor de venta queda nulo, no cero, y el conteo de productos con precio lo deja fuera
+
+#### Scenario: Existencia desconocida con precio conocido
+
+- **WHEN** una variante sin rastreo de inventario sí tiene precio de lista
+- **THEN** se guarda el precio unitario pero no el valor de venta: se sabe a cuánto se vende la pieza, no cuántas hay
+
+#### Scenario: Sin valor de venta que dividir
+
+- **WHEN** ningún producto de la foto tiene precio
+- **THEN** el margen potencial se reporta nulo, no cero por ciento
+
 ### Requirement: Cobertura del avalúo
 
 El avalúo SHALL publicar qué porcentaje de las piezas con existencia conocida quedó valuado. Cuando la cobertura sea menor al 100 %, el total SHALL interpretarse como un piso: hay mercancía cuyo costo el sistema no conoce.
@@ -102,7 +130,7 @@ El avalúo SHALL publicar qué porcentaje de las piezas con existencia conocida 
 
 ### Requirement: Reporte de avalúo de inventario
 
-El sistema SHALL exponer `GET /reports/inventory-valuation`, que devuelve el avalúo de una foto: un renglón por producto con SKU, nombre, piezas en existencia, costo unitario y costo total, ordenados de mayor a menor costo total, más los totales del avalúo.
+El sistema SHALL exponer `GET /reports/inventory-valuation`, que devuelve el avalúo de una foto: un renglón por producto con SKU, nombre, piezas en existencia, costo unitario, costo total, precio de lista y valor de venta, ordenados de mayor a menor costo total, más los totales del avalúo.
 
 Sin parámetros SHALL usar la foto más reciente del dueño. Si el dueño tiene varias conexiones de Shopify, SHALL usar la más reciente **de cada una** y sumarlas: quedarse sólo con la última dejaría fuera el inventario de la otra tienda sin decirlo. SHALL aceptar elegir otra foto por identificador o por fecha, en cuyo caso usa la más reciente tomada en o antes de esa fecha. Si el dueño no tiene ninguna foto, SHALL responder que no hay avalúo disponible y decir cómo tomar la primera, en vez de devolver un reporte en ceros que parecería un inventario vacío.
 

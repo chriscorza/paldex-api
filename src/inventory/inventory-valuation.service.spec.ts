@@ -24,17 +24,20 @@ const renglon = (over: Partial<any> = {}) => {
     tracked: true,
     unit_cost: new Decimal(85),
     cost_source: 'VARIANT',
+    unit_price: new Decimal(140),
     ...over,
   };
-  /* El costo total viene congelado en la foto, como lo escribe la captura. */
-  if (!('total_cost' in over)) {
-    (item as any).total_cost =
-      item.unit_cost === null || item.quantity_on_hand === null
-        ? null
-        : new Decimal(item.unit_cost).times(item.quantity_on_hand);
-  } else {
-    (item as any).total_cost = (over as any).total_cost;
-  }
+  /* Costo y precio vienen congelados en la foto, como los escribe la captura. */
+  const congelar = (campo: 'cost' | 'price') => {
+    const unitario = campo === 'cost' ? item.unit_cost : item.unit_price;
+    return unitario === null || item.quantity_on_hand === null
+      ? null
+      : new Decimal(unitario).times(item.quantity_on_hand);
+  };
+  (item as any).total_cost =
+    'total_cost' in over ? (over as any).total_cost : congelar('cost');
+  (item as any).total_price =
+    'total_price' in over ? (over as any).total_price : congelar('price');
   return item;
 };
 
@@ -111,6 +114,65 @@ describe('InventoryValuationService', () => {
     expect(report.products).toHaveLength(1);
     expect(report.products[0].quantity_on_hand).toBe(15);
     expect(report.products[0].total_cost).toBe(1275);
+  });
+
+  it('reporta lo que costó y lo que valdría vendido sin descuento', async () => {
+    conFoto(
+      [foto(1, '2026-08-18T12:00:00Z')],
+      [
+        renglon({
+          shopify_variant_id: '1',
+          quantity_on_hand: 10,
+          unit_cost: new Decimal(85),
+          unit_price: new Decimal(140),
+        }),
+      ],
+    );
+
+    const report = await service.getValuation(ctx, {});
+
+    expect(report.products[0].unit_price).toBe(140);
+    expect(report.products[0].total_price).toBe(1400);
+    expect(report.totals.total_cost).toBe(850);
+    expect(report.totals.retail_value).toBe(1400);
+    expect(report.totals.potential_profit).toBe(550);
+    expect(report.totals.potential_margin).toBe(39.29);
+    expect(report.totals.products_priced).toBe(1);
+  });
+
+  it('avisa cuando falta precio de algún producto', async () => {
+    conFoto(
+      [foto(1, '2026-08-18T12:00:00Z')],
+      [
+        renglon({ shopify_variant_id: '1', quantity_on_hand: 10 }),
+        renglon({
+          shopify_variant_id: '2',
+          title: 'Sin precio',
+          quantity_on_hand: 5,
+          unit_price: null,
+          total_price: null,
+        }),
+      ],
+    );
+
+    const report = await service.getValuation(ctx, {});
+
+    /* Dos productos, uno con precio: el valor de venta va corto y se nota. */
+    expect(report.totals.products).toBe(2);
+    expect(report.totals.products_priced).toBe(1);
+    expect(report.totals.retail_value).toBe(1400);
+  });
+
+  it('deja el margen en nulo cuando no hay valor de venta', async () => {
+    conFoto(
+      [foto(1, '2026-08-18T12:00:00Z')],
+      [renglon({ unit_price: null, total_price: null })],
+    );
+
+    const report = await service.getValuation(ctx, {});
+
+    expect(report.totals.retail_value).toBe(0);
+    expect(report.totals.potential_margin).toBeNull();
   });
 
   it('reporta la cobertura y deja fuera del total lo que no tiene costo', async () => {

@@ -753,6 +753,7 @@ model InventorySnapshot {
   status                InventorySnapshotStatus @default(PENDING)
   total_units           Int                     @default(0)
   total_cost            Decimal                 @default(0) @db.Decimal(14, 2)
+  retail_value          Decimal                 @default(0) @db.Decimal(14, 2)
   products_valued       Int                     @default(0)
   products_without_cost Int                     @default(0)
   variants_untracked    Int                     @default(0)
@@ -786,6 +787,9 @@ model InventorySnapshotItem {
   unit_cost                 Decimal? @db.Decimal(14, 2)
   total_cost                Decimal? @db.Decimal(14, 2)
   cost_source               String?
+  /// Precio de lista de Shopify: lo que valdría vendido sin descuento.
+  unit_price                Decimal? @db.Decimal(14, 2)
+  total_price               Decimal? @db.Decimal(14, 2)
   created_at                DateTime @default(now())
 
   snapshot InventorySnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Cascade)

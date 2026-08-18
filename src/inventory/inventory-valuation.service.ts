@@ -27,6 +27,8 @@ interface Bucket {
   unit_cost: Decimal | null;
   cost_source: string | null;
   total_cost: Decimal | null;
+  unit_price: Decimal | null;
+  total_price: Decimal | null;
   tracked: boolean;
 }
 
@@ -69,6 +71,8 @@ export class InventoryValuationService {
         unit_cost: true,
         total_cost: true,
         cost_source: true,
+        unit_price: true,
+        total_price: true,
       },
     });
 
@@ -90,6 +94,8 @@ export class InventoryValuationService {
           unit_cost: null,
           cost_source: null,
           total_cost: null,
+          unit_price: null,
+          total_price: null,
           tracked: false,
         };
         buckets.set(key, bucket);
@@ -109,6 +115,14 @@ export class InventoryValuationService {
           item.total_cost,
         );
       }
+      if (item.unit_price !== null && bucket.unit_price === null) {
+        bucket.unit_price = new Decimal(item.unit_price);
+      }
+      if (item.total_price !== null) {
+        bucket.total_price = (bucket.total_price ?? new Decimal(0)).add(
+          item.total_price,
+        );
+      }
     }
 
     const products = [...buckets.values()].map(
@@ -125,6 +139,14 @@ export class InventoryValuationService {
             bucket.total_cost === null
               ? null
               : toMoneyNumber(bucket.total_cost),
+          unit_price:
+            bucket.unit_price === null
+              ? null
+              : toMoneyNumber(bucket.unit_price),
+          total_price:
+            bucket.total_price === null
+              ? null
+              : toMoneyNumber(bucket.total_price),
         }),
     );
 
@@ -211,7 +233,9 @@ export class InventoryValuationService {
     let totalUnits = 0;
     let unitsWithoutCost = 0;
     let totalCost = new Decimal(0);
+    let retailValue = new Decimal(0);
     let valued = 0;
+    let priced = 0;
     let withoutCost = 0;
     let untracked = 0;
 
@@ -220,6 +244,9 @@ export class InventoryValuationService {
         totalUnits += bucket.quantity_on_hand;
       if (bucket.total_cost !== null)
         totalCost = totalCost.add(bucket.total_cost);
+      if (bucket.total_price !== null)
+        retailValue = retailValue.add(bucket.total_price);
+      if (bucket.unit_price !== null) priced++;
       if (bucket.unit_cost === null) {
         withoutCost++;
         if (bucket.quantity_on_hand !== null)
@@ -239,6 +266,15 @@ export class InventoryValuationService {
       units_without_cost: unitsWithoutCost,
       total_cost: toMoneyNumber(totalCost) ?? 0,
       cost_coverage: percentage(totalUnits - unitsWithoutCost, totalUnits),
+      retail_value: toMoneyNumber(retailValue) ?? 0,
+      /*
+       * Techo, no pronóstico: supone vender hasta la última pieza al precio de
+       * lista, sin un descuento. Se publica junto a `products_priced` para que
+       * se note cuando falta precio de alguna.
+       */
+      potential_profit: toMoneyNumber(retailValue.minus(totalCost)) ?? 0,
+      potential_margin: percentage(retailValue.minus(totalCost), retailValue),
+      products_priced: priced,
     });
   }
 

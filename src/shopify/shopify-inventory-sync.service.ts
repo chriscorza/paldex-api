@@ -23,6 +23,8 @@ export interface InventoryLevelRow {
   quantity_on_hand: number | null;
   tracked: boolean;
   shopify_unit_cost: number | null;
+  /* Precio de lista, sin descuentos ni promociones aplicadas. */
+  shopify_unit_price: number | null;
 }
 
 /*
@@ -53,6 +55,7 @@ const INVENTORY_QUERY = `
           id
           sku
           title
+          price
           product { id title }
           inventoryItem {
             id
@@ -172,10 +175,8 @@ export class ShopifyInventorySyncService {
       shopify_inventory_item_id: this.legacyId(item?.id),
       sku: node.sku || null,
       title: this.titleFor(node),
-      shopify_unit_cost:
-        item?.unitCost?.amount !== undefined && item?.unitCost?.amount !== null
-          ? Number(item.unitCost.amount)
-          : null,
+      shopify_unit_cost: this.optionalNumber(item?.unitCost?.amount),
+      shopify_unit_price: this.optionalNumber(node.price),
     };
 
     /* Sin rastreo no hay cantidad que valga: existencia desconocida. */
@@ -225,6 +226,12 @@ export class ShopifyInventorySyncService {
    * cayera en silencio al costo de Shopify, que es justo el error que la
    * precedencia de costos existe para evitar.
    */
+  private optionalNumber(value: any): number | null {
+    if (value === undefined || value === null || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
   private legacyId(gid: any): string | null {
     if (!gid) return null;
     const match = /\/(\d+)(?:\?.*)?$/.exec(String(gid));

@@ -71,6 +71,20 @@ De `ProductCost` se toma el vigente a `taken_at`, ignorando `effective_from` fut
 
 Se aprovecha la captura para sembrar `ProductCost` con `source: SHOPIFY_INVENTORY` cuando Shopify trae `unitCost` y el dueño no tiene renglón para esa variante. Le da uso al valor del enum que lleva meses muerto y hace que el catálogo de costos se llene solo.
 
+### Dos valuaciones del mismo inventario
+
+La misma foto se valúa al costo (lo que salió del bolsillo) y al precio de lista (lo que entraría si se
+vendiera todo sin descuento). Son las dos preguntas que un dueño hace del mismo montón de mercancía, y
+la diferencia entre ambas es la ganancia bruta que queda por cobrar.
+
+`retail_value` es un **techo**, no un pronóstico: nadie vende su inventario completo, ni a precio de
+lista. Se publica junto a `products_priced` para que se note cuando alguna pieza no tiene precio y el
+número va corto — la misma disciplina que `cost_coverage` aplica al costo.
+
+El precio viene de `ProductVariant.price` (scope `read_products`, ya concedido) y **sólo** de ahí. No
+se cruza con `ProductCost`, que responde la otra mitad del par, ni con el precio al que se vendió
+antes, que es histórico y ya trae descuentos aplicados.
+
 ### Existencia desconocida ≠ cero
 
 `quantity_on_hand` es nullable. `tracked: false` guarda `null`, no `0`. Un cero dice "no tengo nada" y resta del avalúo; un nulo dice "no sé", y el snapshot publica cuántas variantes están así. Confundirlos hace que el total salga corto sin que nadie se entere, que es el modo de fallo que este proyecto evita en todos sus reportes.

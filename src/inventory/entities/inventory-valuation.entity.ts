@@ -63,6 +63,22 @@ export class InventoryValuationProductEntity {
   })
   total_cost: number | null;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Precio de lista de Shopify: lo que la tienda pide hoy por la pieza. No ' +
+      'descuenta promociones ni cupones.',
+  })
+  unit_price: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Piezas × precio de lista: lo que entraría si se vendiera todo sin ' +
+      'descuento. `null` si falta el precio o la existencia.',
+  })
+  total_price: number | null;
+
   constructor(partial: InventoryValuationProductEntity) {
     Object.assign(this, partial);
   }
@@ -108,6 +124,37 @@ export class InventoryValuationTotalsEntity {
       'existencias. Por debajo de 100, el total es un piso.',
   })
   cost_coverage: number | null;
+
+  @ApiProperty({
+    description:
+      'Lo que entraría si se vendiera todo el inventario al precio de lista, ' +
+      'sin un solo descuento. Es un techo, no un pronóstico: nadie vende su ' +
+      'inventario completo ni a precio de lista.',
+  })
+  retail_value: number;
+
+  @ApiProperty({
+    description:
+      'La diferencia: `retail_value` menos `total_cost`. La ganancia bruta que ' +
+      'queda por cobrar en esa mercancía, antes de descuentos y de cualquier ' +
+      'gasto de la tienda.',
+  })
+  potential_profit: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Margen de esa ganancia sobre el precio de venta. `null` si no hay valor ' +
+      'de venta que dividir.',
+  })
+  potential_margin: number | null;
+
+  @ApiProperty({
+    description:
+      'Productos con precio de lista conocido. Si es menor que ' +
+      '`products`, `retail_value` va corto.',
+  })
+  products_priced: number;
 
   constructor(partial: InventoryValuationTotalsEntity) {
     Object.assign(this, partial);
