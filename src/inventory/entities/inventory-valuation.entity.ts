@@ -33,13 +33,11 @@ export class InventoryValuationProductEntity {
   @ApiProperty({
     nullable: true,
     description:
-      'Piezas en existencia, sumando sucursales. `null` cuando Shopify no ' +
-      'rastrea el producto: es existencia desconocida, no cero.',
+      'Piezas en existencia, con todas las sucursales sumadas —el desglose por ' +
+      'sucursal exige el scope `read_locations`, que la app no pide—. `null` ' +
+      'cuando Shopify no rastrea el producto: es existencia desconocida, no cero.',
   })
   quantity_on_hand: number | null;
-
-  @ApiProperty({ description: 'En cuántas sucursales está.' })
-  locations: number;
 
   @ApiProperty({
     nullable: true,

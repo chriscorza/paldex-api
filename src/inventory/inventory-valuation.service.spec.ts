@@ -97,7 +97,7 @@ describe('InventoryValuationService', () => {
     expect(report.totals.cost_coverage).toBe(100);
   });
 
-  it('suma las sucursales en un solo renglón por producto', async () => {
+  it('agrupa en un renglón los varios que traiga la foto del mismo producto', async () => {
     conFoto(
       [foto(1, '2026-08-18T12:00:00Z')],
       [
@@ -110,7 +110,6 @@ describe('InventoryValuationService', () => {
 
     expect(report.products).toHaveLength(1);
     expect(report.products[0].quantity_on_hand).toBe(15);
-    expect(report.products[0].locations).toBe(2);
     expect(report.products[0].total_cost).toBe(1275);
   });
 

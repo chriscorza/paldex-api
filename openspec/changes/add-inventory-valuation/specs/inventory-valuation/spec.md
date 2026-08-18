@@ -8,9 +8,11 @@ Traer de Shopify cuántas piezas hay en existencia, guardarlas como fotos fechad
 
 ### Requirement: Captura de existencias desde Shopify
 
-El sistema SHALL poder consultar las existencias de una conexión de Shopify activa y guardarlas como una foto fechada (`InventorySnapshot`) con un renglón (`InventorySnapshotItem`) por variante y sucursal.
+El sistema SHALL poder consultar las existencias de una conexión de Shopify activa y guardarlas como una foto fechada (`InventorySnapshot`) con un renglón (`InventorySnapshotItem`) por variante, con las existencias de todas sus sucursales sumadas.
 
-Cada renglón SHALL guardar el identificador de la variante, el del *inventory item*, el SKU, el nombre del producto, la sucursal y las piezas en existencia. Las piezas se toman de la cantidad `on_hand` de Shopify, MUST NOT tomarse de `available`: `available` ya descuenta lo comprometido por pedidos sin surtir, y esa mercancía sigue siendo propiedad del negocio hasta que sale de la tienda.
+Cada renglón SHALL guardar el identificador de la variante, el del *inventory item*, el SKU, el nombre del producto y las piezas en existencia.
+
+El sistema MUST NOT pedir el nombre de la sucursal: ese campo exige el scope `read_locations`, que la app no solicita, y pedirlo hace que Shopify rechace la consulta entera. Se pierde el desglose por sucursal —un dato de detalle— y no el total, que es lo que se valúa. Las piezas se toman de la cantidad `on_hand` de Shopify, MUST NOT tomarse de `available`: `available` ya descuenta lo comprometido por pedidos sin surtir, y esa mercancía sigue siendo propiedad del negocio hasta que sale de la tienda.
 
 La foto SHALL registrar el momento en que se tomó (`taken_at`) y a qué conexión y dueño pertenece.
 
@@ -22,7 +24,7 @@ La foto SHALL registrar el momento en que se tomó (`taken_at`) y a qué conexi�
 #### Scenario: Producto en varias sucursales
 
 - **WHEN** una variante tiene existencias en dos sucursales
-- **THEN** el sistema guarda un renglón por sucursal, cada uno con el nombre de la suya, y el avalúo del producto suma las dos
+- **THEN** el sistema guarda un solo renglón con la suma de las dos, sin nombre de sucursal
 
 #### Scenario: Catálogo que no cabe en una página
 

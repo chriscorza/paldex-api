@@ -24,7 +24,6 @@ interface Bucket {
   sku: string | null;
   title: string;
   quantity_on_hand: number | null;
-  locations: number;
   unit_cost: Decimal | null;
   cost_source: string | null;
   total_cost: Decimal | null;
@@ -65,7 +64,6 @@ export class InventoryValuationService {
         shopify_variant_id: true,
         sku: true,
         title: true,
-        location_name: true,
         quantity_on_hand: true,
         tracked: true,
         unit_cost: true,
@@ -74,7 +72,11 @@ export class InventoryValuationService {
       },
     });
 
-    /* Una variante en dos sucursales son dos renglones y un solo producto. */
+    /*
+     * La captura ya suma las sucursales en un renglón por variante, pero se
+     * agrupa igual: una foto vieja —o dos conexiones con el mismo SKU— sí traen
+     * varios renglones del mismo producto.
+     */
     const buckets = new Map<string, Bucket>();
     for (const item of items) {
       const key = item.shopify_variant_id ?? item.sku ?? item.title;
@@ -85,7 +87,6 @@ export class InventoryValuationService {
           sku: item.sku,
           title: item.title,
           quantity_on_hand: null,
-          locations: 0,
           unit_cost: null,
           cost_source: null,
           total_cost: null,
@@ -94,7 +95,6 @@ export class InventoryValuationService {
         buckets.set(key, bucket);
       }
 
-      if (item.location_name) bucket.locations += 1;
       if (item.tracked) bucket.tracked = true;
       if (item.quantity_on_hand !== null) {
         bucket.quantity_on_hand =
@@ -118,7 +118,6 @@ export class InventoryValuationService {
           sku: bucket.sku,
           title: bucket.title,
           quantity_on_hand: bucket.quantity_on_hand,
-          locations: bucket.locations,
           unit_cost:
             bucket.unit_cost === null ? null : toMoneyNumber(bucket.unit_cost),
           cost_source: bucket.cost_source,

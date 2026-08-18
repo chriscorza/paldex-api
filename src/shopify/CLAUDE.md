@@ -32,6 +32,9 @@ later without changing the data model.
   `read_inventory` was in the list is still alive without it, so the service checks
   `ShopifyConnection.scope` and fails asking for a reinstall. Without that check the failure
   arrives as a contextless GraphQL authorization error at 6:15am inside a cron.
+- **Do not ask for `location { name }`.** It needs `read_locations`, which is not in the granted
+  scopes; Shopify answers `ACCESS_DENIED` for the whole query instead of nulling that field, so the
+  capture came back empty. Quantities are summed across locations.
 - **GIDs are converted to legacy numeric ids** before being stored, like everywhere else in the
   module — see `legacyId`.
 

@@ -48,6 +48,17 @@ Alternativa descartada: una Bulk Operation como la del backfill. Las bulk ops ex
 
 `productVariants` va en la raíz a propósito: `products → variants → inventoryItem.inventoryLevels` serían tres niveles de anidamiento, que es lo que impide reutilizar esta consulta en una bulk operation más adelante.
 
+### Sin desglose por sucursal
+
+`location { name }` exige el scope `read_locations`, que la app no pide —y pedirlo obligaría a
+reinstalar cada conexión ya instalada—. Shopify no degrada ese campo: rechaza la consulta entera
+con `ACCESS_DENIED`, así que pedirlo dejaba la captura sin existencias en absoluto. Se suman las
+sucursales en un renglón por variante. El total, que es lo que se valúa, sale idéntico; lo que se
+pierde es poder ver cuánto hay en la tienda y cuánto en la bodega.
+
+La columna `location_name` se conserva nula en el esquema: el día que se pida `read_locations`, el
+desglose vuelve sin migración.
+
 ### `on_hand`, no `available`
 
 `available` descuenta lo comprometido por pedidos aún sin surtir. Esa mercancía sigue siendo del negocio hasta que sale por la puerta, así que valuar con `available` subvalúa el inventario justo en la temporada de más pedidos abiertos, que es cuando más importa el número.
@@ -97,6 +108,6 @@ La captura y el histórico viven en `src/inventory/` (`POST /inventory/snapshots
 
 ## Open Questions
 
-- ¿El avalúo debe separarse por sucursal en el reporte, o basta con el total por producto y el detalle guardado en el renglón? Se implementa sumando por producto y guardando la sucursal en el dato; si hace falta el corte por sucursal, es un parámetro adicional, no un cambio de modelo.
+- ~~¿El avalúo debe separarse por sucursal?~~ **Resuelto durante la implementación**: no se puede sin el scope `read_locations`, y añadirlo obliga a reinstalar la conexión. Se suman las sucursales. La columna queda en el esquema para poder recuperarlo sin migración.
 - ¿Cuánto histórico conservar? Por ahora todo. La poda se decide cuando el volumen lo pida.
 - El COGS por diferencia de inventarios (inicial + compras − final) contrastado contra `GET /reports/monthly` queda fuera de este cambio, pero es la razón principal para guardar historia.

@@ -7,12 +7,17 @@ import {
 import { PrismaService } from '../prisma.service';
 import { ShopifyGraphQLService } from './shopify-graphql.service';
 
-/* Un renglón por variante y sucursal, tal como lo devuelve Shopify. */
+/* Un renglón por variante, con las existencias de todas sus sucursales sumadas. */
 export interface InventoryLevelRow {
   shopify_variant_id: string | null;
   shopify_inventory_item_id: string | null;
   sku: string | null;
   title: string;
+  /*
+   * Siempre nulo por ahora: leer el nombre de la sucursal exige el scope
+   * `read_locations`, que la app no pide. La columna se conserva para poder
+   * desglosar por sucursal el día que se pida ese permiso.
+   */
   location_name: string | null;
   /* Nulo = Shopify no rastrea esta variante. No es cero: es «no sé». */
   quantity_on_hand: number | null;
@@ -27,6 +32,12 @@ export interface InventoryLevelRow {
  * mercancía sigue siendo del negocio hasta que sale por la puerta. Valuar con
  * `available` subvalúa el inventario justo en la temporada de más pedidos
  * abiertos, que es cuando más importa el número.
+ *
+ * No se pide `location { name }`: ese campo exige el scope `read_locations`,
+ * que la app no pide, y pedirlo hacía que Shopify rechazara la consulta entera
+ * —con datos parciales y un error de acceso— en vez de devolver existencias. Se
+ * suman las sucursales y se pierde el desglose, que es un dato de detalle; el
+ * total, que es el que se valúa, sale idéntico.
  *
  * `productVariants` va en la raíz —y no `products { variants { ... } }`— porque
  * así el anidamiento de conexiones queda en dos niveles: es el requisito para
@@ -47,10 +58,9 @@ const INVENTORY_QUERY = `
             id
             tracked
             unitCost { amount }
-            inventoryLevels(first: 10) {
+            inventoryLevels(first: 50) {
               edges {
                 node {
-                  location { name }
                   quantities(names: ["on_hand"]) { name quantity }
                 }
               }
@@ -82,11 +92,23 @@ export class ShopifyInventorySyncService {
     let cursor: string | null = null;
 
     for (let page = 0; page < this.MAX_PAGES; page++) {
-      const data: any = await this.graphql.graphql(
-        connectionId,
-        INVENTORY_QUERY,
-        { pageSize: this.PAGE_SIZE, cursor },
-      );
+      /*
+       * Un fallo de GraphQL salía como «Internal server error», sin decir qué
+       * faltaba. Lo que casi siempre falla es un scope no concedido, y eso se
+       * arregla reinstalando: el mensaje tiene que llegar hasta quien lo pidió.
+       */
+      let data: any;
+      try {
+        data = await this.graphql.graphql(connectionId, INVENTORY_QUERY, {
+          pageSize: this.PAGE_SIZE,
+          cursor,
+        });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new BadRequestException(
+          `Shopify rechazó la consulta de inventario de la conexión ${connectionId}: ${detail}`,
+        );
+      }
 
       const connection = data?.productVariants;
       for (const edge of connection?.edges ?? []) {
@@ -168,20 +190,20 @@ export class ShopifyInventorySyncService {
       ];
     }
 
+    /*
+     * Rastreada pero en ninguna sucursal: eso sí es cero de verdad. Y con
+     * varias, la suma —sin el nombre no habría forma de distinguir un renglón
+     * de otro, y el avalúo los sumaría igual.
+     */
     const levels = item?.inventoryLevels?.edges ?? [];
-    /* Rastreada pero en ninguna sucursal: eso sí es cero de verdad. */
-    if (levels.length === 0) {
-      return [
-        { ...base, location_name: null, quantity_on_hand: 0, tracked: true },
-      ];
-    }
+    const onHand = levels.reduce(
+      (total: number, edge: any) => total + this.onHand(edge?.node),
+      0,
+    );
 
-    return levels.map((edge: any) => ({
-      ...base,
-      location_name: edge?.node?.location?.name ?? null,
-      quantity_on_hand: this.onHand(edge?.node),
-      tracked: true,
-    }));
+    return [
+      { ...base, location_name: null, quantity_on_hand: onHand, tracked: true },
+    ];
   }
 
   /*

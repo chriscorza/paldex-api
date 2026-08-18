@@ -32,10 +32,7 @@ const variante = (
     inventoryLevels: {
       edges: (opciones.levels ?? [{ location: 'Tienda', onHand: 12 }]).map(
         (nivel) => ({
-          node: {
-            location: { name: nivel.location },
-            quantities: [{ name: 'on_hand', quantity: nivel.onHand }],
-          },
+          node: { quantities: [{ name: 'on_hand', quantity: nivel.onHand }] },
         }),
       ),
     },
@@ -95,7 +92,7 @@ describe('ShopifyInventorySyncService', () => {
         shopify_inventory_item_id: '1',
         sku: 'SKU-1',
         title: 'Collar rojo',
-        location_name: 'Tienda',
+        location_name: null,
         quantity_on_hand: 12,
         tracked: true,
         shopify_unit_cost: 85,
@@ -122,6 +119,8 @@ describe('ShopifyInventorySyncService', () => {
     const [, query] = graphql.graphql.mock.calls[0];
     expect(query).toContain('quantities(names: ["on_hand"])');
     expect(query).not.toContain('available');
+    /* `location { name }` exige `read_locations`; pedirlo tumbaba la consulta. */
+    expect(query).not.toContain('location');
   });
 
   it('recorre todas las páginas del catálogo', async () => {
@@ -178,7 +177,7 @@ describe('ShopifyInventorySyncService', () => {
     expect(row.quantity_on_hand).toBe(-3);
   });
 
-  it('devuelve un renglón por sucursal', async () => {
+  it('suma las existencias de todas las sucursales en un solo renglón', async () => {
     graphql.graphql.mockResolvedValue(
       pagina([
         variante('gid://shopify/ProductVariant/1', {
@@ -192,11 +191,13 @@ describe('ShopifyInventorySyncService', () => {
 
     const rows = await service.fetchInventory(1);
 
-    expect(rows).toHaveLength(2);
-    expect(rows.map((r) => [r.location_name, r.quantity_on_hand])).toEqual([
-      ['Tienda', 12],
-      ['Bodega', 30],
-    ]);
+    /*
+     * Sin `read_locations` no hay nombre que distinga un renglón de otro, y el
+     * avalúo los sumaría igual. El total es lo que importa.
+     */
+    expect(rows).toHaveLength(1);
+    expect(rows[0].quantity_on_hand).toBe(42);
+    expect(rows[0].location_name).toBeNull();
   });
 
   it('da cero a la variante rastreada que no está en ninguna sucursal', async () => {
@@ -252,6 +253,17 @@ describe('ShopifyInventorySyncService', () => {
 
     await expect(service.fetchInventory(1)).rejects.toThrow(NotFoundException);
     expect(graphql.graphql).not.toHaveBeenCalled();
+  });
+
+  it('explica el rechazo de Shopify en vez de reventar sin contexto', async () => {
+    graphql.graphql.mockRejectedValue(
+      new Error('GraphQL error: Access denied for name field.'),
+    );
+
+    await expect(service.fetchInventory(1)).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(service.fetchInventory(1)).rejects.toThrow(/Access denied/);
   });
 
   it('corta un catálogo que no termina en vez de paginar sin fin', async () => {

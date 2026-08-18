@@ -165,6 +165,11 @@ This one values what is **left**.
 - **`on_hand`, never `available`.** `available` already subtracts units committed to unfulfilled
   orders; that stock is still yours until it leaves the store, and using `available` undervalues
   the inventory exactly in the busiest season.
+- **No per-location breakdown.** `location { name }` needs the `read_locations` scope, which the
+  app does not request; Shopify rejects the whole query with `ACCESS_DENIED` rather than degrading
+  that one field, so asking for it returned no stock at all. Locations are summed into one row per
+  variant. `location_name` stays in the schema, always null, so the breakdown can come back without
+  a migration if that scope is ever granted.
 - **Unknown stock is `null`, not `0`.** A variant with `inventoryItem.tracked: false` has no count.
   Zero would say "I have none" and subtract from the valuation; `products_untracked` publishes how
   many are in that state.
