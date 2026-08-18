@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma.service';
 import { PayrollService } from '../payroll/payroll.service';
 import { RecurringExpensesService } from '../recurring-expenses/recurring-expenses.service';
 import { ShopifyReconciliationService } from '../shopify/shopify-reconciliation.service';
+import { InventorySnapshotService } from '../inventory/inventory-snapshot.service';
 import { reportsTimeZone } from '../common/timezone';
 
 /*
@@ -34,6 +35,7 @@ export class ScheduledJobsService {
     private readonly payroll: PayrollService,
     private readonly recurring: RecurringExpensesService,
     private readonly reconciliation: ShopifyReconciliationService,
+    private readonly inventorySnapshots: InventorySnapshotService,
   ) {}
 
   /*
@@ -68,6 +70,58 @@ export class ScheduledJobsService {
       'gastos recurrentes',
       (ctx, range) => this.recurring.generate(ctx, range),
     );
+  }
+
+  /*
+   * Diez minutos después de los gastos recurrentes. El avalúo es un saldo
+   * diario, no un dato en vivo: por eso una foto al día y no el webhook
+   * `INVENTORY_LEVELS_UPDATE`, que dispararía en cada venta para reescribir lo
+   * mismo cientos de veces.
+   */
+  @Cron('15 6 * * *', {
+    name: 'foto-de-inventario',
+    timeZone: reportsTimeZone(),
+  })
+  async captureInventory(): Promise<void> {
+    if (!this.enabled()) return;
+
+    /*
+     * Por dueño, igual que las generaciones: la foto se cuelga de su usuario y
+     * se valúa con **su** catálogo de costos. Una corrida global se las
+     * atribuiría todas a quien el trabajo fingiera ser.
+     */
+    const connections = await this.prisma.shopifyConnection.findMany({
+      where: { status: 'ACTIVE' },
+      distinct: ['user_id'],
+      select: { user_id: true },
+    });
+
+    for (const { user_id } of connections) {
+      try {
+        const snapshots = await this.inventorySnapshots.captureForOwner({
+          userId: user_id,
+          scope: 'OWN',
+        });
+        for (const snapshot of snapshots) {
+          this.logger.log(
+            `Foto de inventario ${snapshot.id} del usuario ${user_id}: ` +
+              `${snapshot.total_units} piezas, ${snapshot.total_cost} de costo` +
+              (snapshot.products_without_cost > 0
+                ? `, ${snapshot.products_without_cost} productos sin costo`
+                : ''),
+          );
+        }
+      } catch (err) {
+        /*
+         * Un dueño con el token vencido no puede detener a los demás: cada
+         * tienda es independiente y la foto que sí se puede tomar, se toma.
+         */
+        this.logger.error(
+          `Falló la foto de inventario del usuario ${user_id}`,
+          err,
+        );
+      }
+    }
   }
 
   /*

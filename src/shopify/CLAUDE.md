@@ -18,3 +18,22 @@ Only stores billing in **MXN** are accepted — `unsupported_currency` is the ex
 `SHOPIFY_CALLBACK_URL` (must match the Partner Dashboard redirect URI, points at this API),
 `SHOPIFY_FRONTEND_URL` (where the OAuth callback sends the browser back to),
 `SHOPIFY_TOKEN_ENCRYPTION_KEY` (32 bytes, hex-encoded — `openssl rand -hex 32`).
+
+## Inventory levels (`read_inventory`)
+
+`ShopifyInventorySyncService` reads stock with a paginated `productVariants` query
+(`inventoryItem { tracked unitCost inventoryLevels { ... quantities(names: ["on_hand"]) } }`),
+not a Bulk Operation — a few hundred variants finish in seconds, and bulk ops cost minutes of
+polling. `productVariants` is kept at the root (not `products { variants { ... } }`) so the
+connection nesting stays at two levels, which is what would allow moving it to a bulk operation
+later without changing the data model.
+
+- **The granted scope is what counts**, not `SHOPIFY_SCOPES`. A connection installed before
+  `read_inventory` was in the list is still alive without it, so the service checks
+  `ShopifyConnection.scope` and fails asking for a reinstall. Without that check the failure
+  arrives as a contextless GraphQL authorization error at 6:15am inside a cron.
+- **GIDs are converted to legacy numeric ids** before being stored, like everywhere else in the
+  module — see `legacyId`.
+
+The rest of the inventory rules (why `on_hand`, why snapshots, cost precedence) are in
+`paldex-api/CLAUDE.md` under "Inventory valuation".

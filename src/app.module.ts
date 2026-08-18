@@ -21,6 +21,7 @@ import { EmployeesModule } from './employees/employees.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { TaxPaymentsModule } from './tax-payments/tax-payments.module';
 import { ReportsModule } from './reports/reports.module';
+import { InventoryModule } from './inventory/inventory.module';
 import { ProductCostsModule } from './product-costs/product-costs.module';
 import { RecurringExpensesModule } from './recurring-expenses/recurring-expenses.module';
 import { PayablesModule } from './payables/payables.module';
@@ -53,6 +54,7 @@ import { PrismaModule } from './prisma.module';
     PayrollModule,
     TaxPaymentsModule,
     ReportsModule,
+    InventoryModule,
     ProductCostsModule,
     RecurringExpensesModule,
     PayablesModule,

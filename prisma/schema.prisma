@@ -5,8 +5,8 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client-js"
-  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x","linux-musl-openssl-3.0.x"]
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -14,30 +14,31 @@ datasource db {
 }
 
 model User {
-  id      Int      @id @default(autoincrement())
-  email   String   @unique
-  password String?
-  name    String?
-  photo_url String?
-  google_token_id String?  @unique
-  locale String @db.VarChar(3) @default("es")
-  created_at DateTime @default(now())
-  role_id Int?
-  role    Role?     @relation(fields: [role_id], references: [id])
-  accounts          Account[]
-  expenses          Expense[]
-  incomes           Income[]
-  shopifyConnections        ShopifyConnection[]
-  expenseCategories         ExpenseCategory[]
-  employees          Employee[]
-  taxPayments        TaxPayment[]
-  productCosts       ProductCost[]
+  id                       Int                       @id @default(autoincrement())
+  email                    String                    @unique
+  password                 String?
+  name                     String?
+  photo_url                String?
+  google_token_id          String?                   @unique
+  locale                   String                    @default("es") @db.VarChar(3)
+  created_at               DateTime                  @default(now())
+  role_id                  Int?
+  role                     Role?                     @relation(fields: [role_id], references: [id])
+  accounts                 Account[]
+  expenses                 Expense[]
+  incomes                  Income[]
+  shopifyConnections       ShopifyConnection[]
+  expenseCategories        ExpenseCategory[]
+  employees                Employee[]
+  taxPayments              TaxPayment[]
+  productCosts             ProductCost[]
   productCategoryOverrides ProductCategoryOverride[]
-  RecurringExpense   RecurringExpense[]
-  Payable            Payable[]
-  Receivable         Receivable[]
-  invitation         Invitation?         @relation("InvitationUser")
-  invitationsSent    Invitation[]        @relation("InvitationInvitedBy")
+  RecurringExpense         RecurringExpense[]
+  Payable                  Payable[]
+  Receivable               Receivable[]
+  invitation               Invitation?               @relation("InvitationUser")
+  invitationsSent          Invitation[]              @relation("InvitationInvitedBy")
+  inventorySnapshots       InventorySnapshot[]
 
   @@map("users")
 }
@@ -49,17 +50,17 @@ enum InvitationStatus {
 }
 
 model Invitation {
-  id          Int               @id @default(autoincrement())
-  email       String            @unique
-  status      InvitationStatus  @default(PENDING)
-  user_id     Int?              @unique
+  id          Int              @id @default(autoincrement())
+  email       String           @unique
+  status      InvitationStatus @default(PENDING)
+  user_id     Int?             @unique
   invited_by  Int?
-  created_at  DateTime          @default(now())
+  created_at  DateTime         @default(now())
   accepted_at DateTime?
   revoked_at  DateTime?
 
-  user        User?             @relation("InvitationUser", fields: [user_id], references: [id])
-  invitedBy   User?             @relation("InvitationInvitedBy", fields: [invited_by], references: [id])
+  user      User? @relation("InvitationUser", fields: [user_id], references: [id])
+  invitedBy User? @relation("InvitationInvitedBy", fields: [invited_by], references: [id])
 
   @@map("invitations")
 }
@@ -70,11 +71,11 @@ enum PermissionScope {
 }
 
 model Role {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique
+  id          Int              @id @default(autoincrement())
+  name        String           @unique
   description String?
-  is_system   Boolean  @default(false)
-  created_at  DateTime @default(now())
+  is_system   Boolean          @default(false)
+  created_at  DateTime         @default(now())
   permissions RolePermission[]
   users       User[]
 
@@ -82,12 +83,12 @@ model Role {
 }
 
 model Permission {
-  id          Int             @id @default(autoincrement())
+  id          Int              @id @default(autoincrement())
   resource    String
   action      String
-  scope       PermissionScope @default(ANY)
+  scope       PermissionScope  @default(ANY)
   description String?
-  created_at  DateTime        @default(now())
+  created_at  DateTime         @default(now())
   roles       RolePermission[]
 
   @@unique([resource, action, scope])
@@ -118,59 +119,60 @@ enum ShopifyConnectionStatus {
 }
 
 model ShopifyConnection {
-  id              Int                     @id @default(autoincrement())
-  user_id         Int
-  shop_domain     String                  @unique
-  account_id      Int
-  access_token    String
-  scope           String
-  status          ShopifyConnectionStatus @default(ACTIVE)
-  installed_at    DateTime                @default(now())
-  last_synced_at  DateTime?
-  user            User                    @relation(fields: [user_id], references: [id])
-  account         Account                 @relation(fields: [account_id], references: [id])
-  orders          ShopifyOrder[]
-  gateway_accounts ShopifyGatewayAccount[]
+  id                  Int                     @id @default(autoincrement())
+  user_id             Int
+  shop_domain         String                  @unique
+  account_id          Int
+  access_token        String
+  scope               String
+  status              ShopifyConnectionStatus @default(ACTIVE)
+  installed_at        DateTime                @default(now())
+  last_synced_at      DateTime?
+  user                User                    @relation(fields: [user_id], references: [id])
+  account             Account                 @relation(fields: [account_id], references: [id])
+  orders              ShopifyOrder[]
+  gateway_accounts    ShopifyGatewayAccount[]
+  inventory_snapshots InventorySnapshot[]
 
   @@index([user_id])
   @@map("shopify_connections")
 }
 
 model ShopifyGatewayAccount {
-  id                     Int              @id @default(autoincrement())
-  shopify_connection_id  Int
-  gateway                String
-  account_id             Int
-  created_at             DateTime         @default(now())
+  id                    Int      @id @default(autoincrement())
+  shopify_connection_id Int
+  gateway               String
+  account_id            Int
+  created_at            DateTime @default(now())
 
-  shopify_connection     ShopifyConnection @relation(fields: [shopify_connection_id], references: [id], onDelete: Cascade)
-  account                Account           @relation(fields: [account_id], references: [id])
+  shopify_connection ShopifyConnection @relation(fields: [shopify_connection_id], references: [id], onDelete: Cascade)
+  account            Account           @relation(fields: [account_id], references: [id])
 
   @@unique([shopify_connection_id, gateway])
   @@map("shopify_gateway_accounts")
 }
 
 model ShopifyOrder {
-  id                     Int              @id @default(autoincrement())
-  shopify_connection_id  Int
-  external_order_id      String
-  order_number           Int
-  items_total            Float
-  shopify_order_total    Float?
-  discount_total         Float
-  tax_total              Float
-  shipping_total         Float            @default(0)
-  cancelled_at           DateTime?
-  cost_total             Float
-  profit_total           Float
-  has_missing_cost_data  Boolean          @default(false)
-  line_items             Json
-  synced_at              DateTime         @default(now())
-  created_at             DateTime         @default(now())
-  updated_at             DateTime         @updatedAt
-  shopify_connection     ShopifyConnection @relation(fields: [shopify_connection_id], references: [id])
-  incomes                Income[]
-  shopify_line_items     ShopifyLineItem[]
+  id                    Int               @id @default(autoincrement())
+  shopify_connection_id Int
+  external_order_id     String
+  order_number          Int
+  items_total           Float
+  shopify_order_total   Float?
+  discount_total        Float
+  tax_total             Float
+  shipping_total        Float             @default(0)
+  cancelled_at          DateTime?
+  cost_total            Float
+  profit_total          Float
+  has_missing_cost_data Boolean           @default(false)
+  line_items            Json
+  synced_at             DateTime          @default(now())
+  created_at            DateTime          @default(now())
+  updated_at            DateTime          @updatedAt
+  shopify_connection    ShopifyConnection @relation(fields: [shopify_connection_id], references: [id])
+  incomes               Income[]
+  shopify_line_items    ShopifyLineItem[]
 
   @@unique([shopify_connection_id, external_order_id])
   @@map("shopify_orders")
@@ -191,29 +193,29 @@ enum ProductCostSource {
 }
 
 model ShopifyLineItem {
-  id                    Int            @id @default(autoincrement())
-  shopify_order_id      Int
-  shopify_line_item_id  String
-  shopify_product_id    String?
-  shopify_variant_id    String?
-  sku                   String?
-  title                 String
-  variant_title         String?
-  quantity              Int
-  unit_price            Decimal        @db.Decimal(14, 2)
-  discount_allocated    Decimal        @db.Decimal(14, 2) @default(0)
-  tax_allocated         Decimal        @db.Decimal(14, 2) @default(0)
-  category_name         String?
-  category_source       CategorySource @default(UNKNOWN)
-  unit_cost             Decimal?       @db.Decimal(14, 2)
-  total_cost            Decimal?       @db.Decimal(14, 2)
-  gross_sales           Decimal        @db.Decimal(14, 2) @default(0)
-  net_sales             Decimal        @db.Decimal(14, 2) @default(0)
-  gross_profit          Decimal?       @db.Decimal(14, 2)
-  profit_margin         Decimal?       @db.Decimal(14, 2)
-  created_at            DateTime       @default(now())
+  id                   Int            @id @default(autoincrement())
+  shopify_order_id     Int
+  shopify_line_item_id String
+  shopify_product_id   String?
+  shopify_variant_id   String?
+  sku                  String?
+  title                String
+  variant_title        String?
+  quantity             Int
+  unit_price           Decimal        @db.Decimal(14, 2)
+  discount_allocated   Decimal        @default(0) @db.Decimal(14, 2)
+  tax_allocated        Decimal        @default(0) @db.Decimal(14, 2)
+  category_name        String?
+  category_source      CategorySource @default(UNKNOWN)
+  unit_cost            Decimal?       @db.Decimal(14, 2)
+  total_cost           Decimal?       @db.Decimal(14, 2)
+  gross_sales          Decimal        @default(0) @db.Decimal(14, 2)
+  net_sales            Decimal        @default(0) @db.Decimal(14, 2)
+  gross_profit         Decimal?       @db.Decimal(14, 2)
+  profit_margin        Decimal?       @db.Decimal(14, 2)
+  created_at           DateTime       @default(now())
 
-  shopify_order         ShopifyOrder   @relation(fields: [shopify_order_id], references: [id], onDelete: Cascade)
+  shopify_order ShopifyOrder @relation(fields: [shopify_order_id], references: [id], onDelete: Cascade)
 
   @@unique([shopify_order_id, shopify_line_item_id])
   @@index([category_name])
@@ -223,17 +225,17 @@ model ShopifyLineItem {
 }
 
 model ProductCost {
-  id                   Int              @id @default(autoincrement())
-  shopify_variant_id   String?
-  sku                  String?
-  unit_cost            Decimal          @db.Decimal(14, 2)
-  effective_from       DateTime         @default(now())
-  source               ProductCostSource @default(MANUAL)
-  notes                String?
-  user_id              Int
-  created_at           DateTime         @default(now())
+  id                 Int               @id @default(autoincrement())
+  shopify_variant_id String?
+  sku                String?
+  unit_cost          Decimal           @db.Decimal(14, 2)
+  effective_from     DateTime          @default(now())
+  source             ProductCostSource @default(MANUAL)
+  notes              String?
+  user_id            Int
+  created_at         DateTime          @default(now())
 
-  user                 User             @relation(fields: [user_id], references: [id])
+  user User @relation(fields: [user_id], references: [id])
 
   @@index([shopify_variant_id])
   @@index([sku])
@@ -242,50 +244,50 @@ model ProductCost {
 }
 
 model ProductCategoryOverride {
-  id                  Int      @id @default(autoincrement())
-  shopify_product_id  String
-  category_name       String
-  user_id             Int
-  created_at          DateTime @default(now())
+  id                 Int      @id @default(autoincrement())
+  shopify_product_id String
+  category_name      String
+  user_id            Int
+  created_at         DateTime @default(now())
 
-  user                User     @relation(fields: [user_id], references: [id])
+  user User @relation(fields: [user_id], references: [id])
 
   @@unique([user_id, shopify_product_id])
   @@map("product_category_overrides")
 }
 
 model Account {
-  id              Int             @id @default(autoincrement())
-  name            String
-  balance         Decimal         @db.Decimal(14, 2)
-  credit_limit    Decimal?        @db.Decimal(14, 2)
-  type            AccountType
-  currency        String          @db.VarChar(3) @default("MXN")
-  is_active       Boolean         @default(true)
-  initial_balance Decimal         @db.Decimal(14, 2) @default(0)
-  created_at      DateTime        @default(now())
-  user_id         Int
-  user            User            @relation(fields: [user_id], references: [id])
-  expenses        Expense[]
-  incomes         Income[]
-  shopifyConnections ShopifyConnection[]
+  id                     Int                     @id @default(autoincrement())
+  name                   String
+  balance                Decimal                 @db.Decimal(14, 2)
+  credit_limit           Decimal?                @db.Decimal(14, 2)
+  type                   AccountType
+  currency               String                  @default("MXN") @db.VarChar(3)
+  is_active              Boolean                 @default(true)
+  initial_balance        Decimal                 @default(0) @db.Decimal(14, 2)
+  created_at             DateTime                @default(now())
+  user_id                Int
+  user                   User                    @relation(fields: [user_id], references: [id])
+  expenses               Expense[]
+  incomes                Income[]
+  shopifyConnections     ShopifyConnection[]
   shopifyGatewayAccounts ShopifyGatewayAccount[]
-  employees       Employee[]
-  payrollPayments PayrollPayment[]
-  taxPayments     TaxPayment[]
+  employees              Employee[]
+  payrollPayments        PayrollPayment[]
+  taxPayments            TaxPayment[]
 
   @@index([user_id])
   @@map("accounts")
 }
 
 model Tax {
-  id          Int      @id @default(autoincrement())
-  name        String
-  rate        Float
-  created_at  DateTime @default(now())
+  id         Int      @id @default(autoincrement())
+  name       String
+  rate       Float
+  created_at DateTime @default(now())
 
-  expenses    ExpenseTax[]
-  incomes     IncomeTax[]
+  expenses ExpenseTax[]
+  incomes  IncomeTax[]
 
   @@map("taxes")
 }
@@ -318,59 +320,59 @@ enum InvoiceStatus {
 }
 
 model ExpenseCategory {
-  id                     Int                 @id @default(autoincrement())
-  name                   String
-  type                   ExpenseCategoryType
-  is_system              Boolean             @default(false)
-  affects_gross_profit   Boolean             @default(false)
-  affects_operating_profit Boolean           @default(true)
-  is_cash_outflow        Boolean             @default(true)
-  user_id                Int?
-  user                   User?               @relation(fields: [user_id], references: [id])
-  expenses               Expense[]
-  created_at             DateTime            @default(now())
+  id                       Int                 @id @default(autoincrement())
+  name                     String
+  type                     ExpenseCategoryType
+  is_system                Boolean             @default(false)
+  affects_gross_profit     Boolean             @default(false)
+  affects_operating_profit Boolean             @default(true)
+  is_cash_outflow          Boolean             @default(true)
+  user_id                  Int?
+  user                     User?               @relation(fields: [user_id], references: [id])
+  expenses                 Expense[]
+  created_at               DateTime            @default(now())
 
   @@unique([user_id, name, type])
   @@map("expense_categories")
 }
 
 model Expense {
-  id                     Int             @id @default(autoincrement())
-  amount                 Decimal         @db.Decimal(14, 2)
-  concept                String
-  date                   DateTime
-  invoiced               Boolean
-  account_id             Int
-  created_at             DateTime        @default(now())
-  user_id                Int
+  id         Int      @id @default(autoincrement())
+  amount     Decimal  @db.Decimal(14, 2)
+  concept    String
+  date       DateTime
+  invoiced   Boolean
+  account_id Int
+  created_at DateTime @default(now())
+  user_id    Int
 
-  category_id            Int?
-  vendor                 String?
-  status                 ExpenseStatus   @default(PAID)
-  paid_at                DateTime?
-  invoice_status         InvoiceStatus   @default(NOT_INVOICED)
-  invoice_uuid           String?
-  supplier_rfc           String?
-  subtotal               Decimal?        @db.Decimal(14, 2)
-  tax_amount             Decimal?        @db.Decimal(14, 2)
-  withholding_amount     Decimal?        @db.Decimal(14, 2)
-  is_tax_deductible      Boolean         @default(true)
-  tax_creditable_amount  Decimal?        @db.Decimal(14, 2) @default(0)
+  category_id           Int?
+  vendor                String?
+  status                ExpenseStatus @default(PAID)
+  paid_at               DateTime?
+  invoice_status        InvoiceStatus @default(NOT_INVOICED)
+  invoice_uuid          String?
+  supplier_rfc          String?
+  subtotal              Decimal?      @db.Decimal(14, 2)
+  tax_amount            Decimal?      @db.Decimal(14, 2)
+  withholding_amount    Decimal?      @db.Decimal(14, 2)
+  is_tax_deductible     Boolean       @default(true)
+  tax_creditable_amount Decimal?      @default(0) @db.Decimal(14, 2)
 
-  recurring_expense_id   Int?
-  scheduled_due_date     DateTime?
-  is_recurring           Boolean         @default(false)
+  recurring_expense_id Int?
+  scheduled_due_date   DateTime?
+  is_recurring         Boolean   @default(false)
 
-  account     Account          @relation(fields: [account_id], references: [id])
-  user        User             @relation(fields: [user_id], references: [id])
-  category    ExpenseCategory? @relation(fields: [category_id], references: [id])
-  recurring   RecurringExpense? @relation(fields: [recurring_expense_id], references: [id])
-  taxes       ExpenseTax[]
+  account   Account           @relation(fields: [account_id], references: [id])
+  user      User              @relation(fields: [user_id], references: [id])
+  category  ExpenseCategory?  @relation(fields: [category_id], references: [id])
+  recurring RecurringExpense? @relation(fields: [recurring_expense_id], references: [id])
+  taxes     ExpenseTax[]
 
+  @@unique([recurring_expense_id, scheduled_due_date])
   @@index([user_id])
   @@index([paid_at])
   @@index([category_id])
-  @@unique([recurring_expense_id, scheduled_due_date])
   @@map("expenses")
 }
 
@@ -382,35 +384,35 @@ enum IncomeType {
 }
 
 model Income {
-  id                      Int           @id @default(autoincrement())
-  amount                  Decimal       @db.Decimal(14, 2)
+  id                      Int      @id @default(autoincrement())
+  amount                  Decimal  @db.Decimal(14, 2)
   concept                 String
   date                    DateTime
   invoiced                Boolean
   account_id              Int
-  created_at              DateTime      @default(now())
+  created_at              DateTime @default(now())
   user_id                 Int
   source                  String?
   external_transaction_id String?
   external_reference      String?
   shopify_order_id        Int?
 
-  income_type             IncomeType    @default(OTHER)
-  channel                 String?
-  gross_amount            Decimal?      @db.Decimal(14, 2)
-  discount_total          Decimal?      @db.Decimal(14, 2) @default(0)
-  fee_total               Decimal?      @db.Decimal(14, 2) @default(0)
-  shipping_charged        Decimal?      @db.Decimal(14, 2) @default(0)
-  shipping_cost           Decimal?      @db.Decimal(14, 2) @default(0)
-  net_amount              Decimal?      @db.Decimal(14, 2)
-  cogs_total              Decimal?      @db.Decimal(14, 2)
-  profit_gross            Decimal?      @db.Decimal(14, 2)
+  income_type      IncomeType @default(OTHER)
+  channel          String?
+  gross_amount     Decimal?   @db.Decimal(14, 2)
+  discount_total   Decimal?   @default(0) @db.Decimal(14, 2)
+  fee_total        Decimal?   @default(0) @db.Decimal(14, 2)
+  shipping_charged Decimal?   @default(0) @db.Decimal(14, 2)
+  shipping_cost    Decimal?   @default(0) @db.Decimal(14, 2)
+  net_amount       Decimal?   @db.Decimal(14, 2)
+  cogs_total       Decimal?   @db.Decimal(14, 2)
+  profit_gross     Decimal?   @db.Decimal(14, 2)
 
-  account     Account         @relation(fields: [account_id], references: [id])
-  user        User            @relation(fields: [user_id], references: [id])
-  taxes       IncomeTax[]
-  shopify_order ShopifyOrder? @relation(fields: [shopify_order_id], references: [id])
-  cogs        CostOfGoodsSold[]
+  account       Account           @relation(fields: [account_id], references: [id])
+  user          User              @relation(fields: [user_id], references: [id])
+  taxes         IncomeTax[]
+  shopify_order ShopifyOrder?     @relation(fields: [shopify_order_id], references: [id])
+  cogs          CostOfGoodsSold[]
 
   @@unique([source, external_transaction_id])
   @@index([user_id])
@@ -420,17 +422,17 @@ model Income {
 }
 
 model CostOfGoodsSold {
-  id                Int       @id @default(autoincrement())
+  id                Int        @id @default(autoincrement())
   income_id         Int
   product_reference String?
-  quantity          Decimal   @db.Decimal(14, 2)
-  unit_cost         Decimal   @db.Decimal(14, 2)
-  total_cost        Decimal   @db.Decimal(14, 2)
+  quantity          Decimal    @db.Decimal(14, 2)
+  unit_cost         Decimal    @db.Decimal(14, 2)
+  total_cost        Decimal    @db.Decimal(14, 2)
   source            CogsSource @default(MANUAL)
   notes             String?
-  created_at        DateTime  @default(now())
+  created_at        DateTime   @default(now())
 
-  income            Income    @relation(fields: [income_id], references: [id], onDelete: Cascade)
+  income Income @relation(fields: [income_id], references: [id], onDelete: Cascade)
 
   @@index([income_id])
   @@map("cost_of_goods_sold")
@@ -472,18 +474,17 @@ model Employee {
   active                     Boolean      @default(true)
   user_id                    Int
 
-  /*
+  /**
    * Los días de la semana cuyas ventas se le atribuyen: 1 = lunes … 7 = domingo.
    * Nulo o vacío = no se le atribuye ninguna venta.
-   *
    * MySQL no puede imponer «un día, un empleado» sobre una columna JSON, así que
    * la exclusividad la valida `EmployeesService` dentro de una transacción.
    */
-  sales_days                 Json?
+  sales_days Json?
 
-  user                       User         @relation(fields: [user_id], references: [id])
-  default_payment_account    Account?     @relation(fields: [default_payment_account_id], references: [id])
-  payments                   PayrollPayment[]
+  user                    User             @relation(fields: [user_id], references: [id])
+  default_payment_account Account?         @relation(fields: [default_payment_account_id], references: [id])
+  payments                PayrollPayment[]
 
   @@index([user_id])
   @@map("employees")
@@ -506,17 +507,17 @@ model PayrollPayment {
   paid_at                DateTime?
   pay_frequency_snapshot PayFrequency
   gross_amount           Decimal       @db.Decimal(14, 2)
-  deductions             Decimal       @db.Decimal(14, 2) @default(0)
-  bonuses                Decimal       @db.Decimal(14, 2) @default(0)
-  net_amount             Decimal       @db.Decimal(14, 2) @default(0)
+  deductions             Decimal       @default(0) @db.Decimal(14, 2)
+  bonuses                Decimal       @default(0) @db.Decimal(14, 2)
+  net_amount             Decimal       @default(0) @db.Decimal(14, 2)
   account_id             Int?
   status                 PayrollStatus @default(PENDING)
   auto_generated         Boolean       @default(false)
   notes                  String?
   created_at             DateTime      @default(now())
 
-  employee               Employee      @relation(fields: [employee_id], references: [id], onDelete: Cascade)
-  account                Account?      @relation(fields: [account_id], references: [id])
+  employee Employee @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  account  Account? @relation(fields: [account_id], references: [id])
 
   @@unique([employee_id, scheduled_pay_date, period_start, period_end])
   @@index([scheduled_pay_date])
@@ -539,22 +540,22 @@ enum TaxPaymentStatus {
 }
 
 model TaxPayment {
-  id                   Int              @id @default(autoincrement())
-  type                 TaxPaymentType
-  tax_id               String?
-  fiscal_period_start  DateTime
-  fiscal_period_end    DateTime
-  due_date             DateTime?
-  paid_at              DateTime?
-  amount               Decimal          @db.Decimal(14, 2)
-  account_id           Int
-  status               TaxPaymentStatus @default(PENDING)
-  notes                String?
-  user_id              Int
-  created_at           DateTime         @default(now())
+  id                  Int              @id @default(autoincrement())
+  type                TaxPaymentType
+  tax_id              String?
+  fiscal_period_start DateTime
+  fiscal_period_end   DateTime
+  due_date            DateTime?
+  paid_at             DateTime?
+  amount              Decimal          @db.Decimal(14, 2)
+  account_id          Int
+  status              TaxPaymentStatus @default(PENDING)
+  notes               String?
+  user_id             Int
+  created_at          DateTime         @default(now())
 
-  user                 User             @relation(fields: [user_id], references: [id])
-  account              Account          @relation(fields: [account_id], references: [id])
+  user    User    @relation(fields: [user_id], references: [id])
+  account Account @relation(fields: [account_id], references: [id])
 
   @@index([paid_at])
   @@index([fiscal_period_start])
@@ -563,22 +564,22 @@ model TaxPayment {
 }
 
 model ExpenseTax {
-  expense_id  Int
-  tax_id      Int
+  expense_id Int
+  tax_id     Int
 
-  expense     Expense @relation(fields: [expense_id], references: [id], onDelete: Cascade)
-  tax         Tax @relation(fields: [tax_id], references: [id], onDelete: Cascade)
+  expense Expense @relation(fields: [expense_id], references: [id], onDelete: Cascade)
+  tax     Tax     @relation(fields: [tax_id], references: [id], onDelete: Cascade)
 
   @@id([expense_id, tax_id]) // Clave primaria compuesta
   @@map("expense_taxes")
 }
 
 model IncomeTax {
-  income_id   Int
-  tax_id      Int
+  income_id Int
+  tax_id    Int
 
-  income      Income @relation(fields: [income_id], references: [id], onDelete: Cascade)
-  tax         Tax @relation(fields: [tax_id], references: [id], onDelete: Cascade)
+  income Income @relation(fields: [income_id], references: [id], onDelete: Cascade)
+  tax    Tax    @relation(fields: [tax_id], references: [id], onDelete: Cascade)
 
   @@id([income_id, tax_id])
   @@map("income_taxes")
@@ -592,28 +593,28 @@ enum RecurringFrequency {
 }
 
 model RecurringExpense {
-  id                      Int               @id @default(autoincrement())
+  id                      Int                @id @default(autoincrement())
   concept                 String
-  amount                  Decimal           @db.Decimal(14, 2)
+  amount                  Decimal            @db.Decimal(14, 2)
   category_id             Int
   account_id              Int?
   frequency               RecurringFrequency
   due_day_of_week         Int?
   due_day_of_month        Int?
   second_due_day_of_month Int?
-  start_date              DateTime          @default(now())
+  start_date              DateTime           @default(now())
   end_date                DateTime?
-  active                  Boolean           @default(true)
-  auto_generate           Boolean           @default(true)
-  requires_confirmation   Boolean           @default(true)
-  invoice_status          InvoiceStatus     @default(NOT_INVOICED)
-  tax_rate                Decimal?          @db.Decimal(5, 2)
+  active                  Boolean            @default(true)
+  auto_generate           Boolean            @default(true)
+  requires_confirmation   Boolean            @default(true)
+  invoice_status          InvoiceStatus      @default(NOT_INVOICED)
+  tax_rate                Decimal?           @db.Decimal(5, 2)
   notes                   String?
   user_id                 Int
-  created_at              DateTime          @default(now())
+  created_at              DateTime           @default(now())
 
-  user                    User              @relation(fields: [user_id], references: [id])
-  expenses                Expense[]
+  user     User      @relation(fields: [user_id], references: [id])
+  expenses Expense[]
 
   @@index([user_id])
   @@map("recurring_expenses")
@@ -628,20 +629,20 @@ enum PayableStatus {
 }
 
 model Payable {
-  id           Int            @id @default(autoincrement())
+  id           Int           @id @default(autoincrement())
   vendor       String
   concept      String
-  total_amount Decimal        @db.Decimal(14, 2)
-  paid_amount  Decimal        @db.Decimal(14, 2) @default(0)
+  total_amount Decimal       @db.Decimal(14, 2)
+  paid_amount  Decimal       @default(0) @db.Decimal(14, 2)
   due_date     DateTime
-  status       PayableStatus  @default(PENDING)
+  status       PayableStatus @default(PENDING)
   account_id   Int?
   notes        String?
   user_id      Int
-  created_at   DateTime       @default(now())
+  created_at   DateTime      @default(now())
 
-  user         User           @relation(fields: [user_id], references: [id])
-  payments     PayablePayment[]
+  user     User             @relation(fields: [user_id], references: [id])
+  payments PayablePayment[]
 
   @@index([due_date])
   @@index([status])
@@ -658,7 +659,7 @@ model PayablePayment {
   notes      String?
   created_at DateTime @default(now())
 
-  payable    Payable  @relation(fields: [payable_id], references: [id], onDelete: Cascade)
+  payable Payable @relation(fields: [payable_id], references: [id], onDelete: Cascade)
 
   @@map("payable_payments")
 }
@@ -672,20 +673,20 @@ enum ReceivableStatus {
 }
 
 model Receivable {
-  id               Int                @id @default(autoincrement())
-  customer         String
-  concept          String
-  total_amount     Decimal            @db.Decimal(14, 2)
-  collected_amount Decimal            @db.Decimal(14, 2) @default(0)
-  due_date         DateTime
-  status           ReceivableStatus   @default(PENDING)
+  id                Int              @id @default(autoincrement())
+  customer          String
+  concept           String
+  total_amount      Decimal          @db.Decimal(14, 2)
+  collected_amount  Decimal          @default(0) @db.Decimal(14, 2)
+  due_date          DateTime
+  status            ReceivableStatus @default(PENDING)
   related_income_id Int?
-  notes            String?
-  user_id          Int
-  created_at       DateTime           @default(now())
+  notes             String?
+  user_id           Int
+  created_at        DateTime         @default(now())
 
-  user             User               @relation(fields: [user_id], references: [id])
-  collections      ReceivableCollection[]
+  user        User                   @relation(fields: [user_id], references: [id])
+  collections ReceivableCollection[]
 
   @@index([due_date])
   @@index([user_id])
@@ -693,15 +694,15 @@ model Receivable {
 }
 
 model ReceivableCollection {
-  id            Int         @id @default(autoincrement())
+  id            Int      @id @default(autoincrement())
   receivable_id Int
-  amount        Decimal     @db.Decimal(14, 2)
-  collected_at  DateTime    @default(now())
+  amount        Decimal  @db.Decimal(14, 2)
+  collected_at  DateTime @default(now())
   account_id    Int
   notes         String?
-  created_at    DateTime    @default(now())
+  created_at    DateTime @default(now())
 
-  receivable    Receivable  @relation(fields: [receivable_id], references: [id], onDelete: Cascade)
+  receivable Receivable @relation(fields: [receivable_id], references: [id], onDelete: Cascade)
 
   @@map("receivable_collections")
 }
@@ -717,13 +718,13 @@ model MonthlyClose {
   year                Int
   month               Int
   status              MonthlyCloseStatus @default(OPEN)
-  income_total        Decimal            @db.Decimal(14, 2) @default(0)
-  expense_total       Decimal            @db.Decimal(14, 2) @default(0)
-  cogs_total          Decimal            @db.Decimal(14, 2) @default(0)
-  payroll_total       Decimal            @db.Decimal(14, 2) @default(0)
-  tax_total           Decimal            @db.Decimal(14, 2) @default(0)
-  net_profit          Decimal            @db.Decimal(14, 2) @default(0)
-  cash_available      Decimal            @db.Decimal(14, 2) @default(0)
+  income_total        Decimal            @default(0) @db.Decimal(14, 2)
+  expense_total       Decimal            @default(0) @db.Decimal(14, 2)
+  cogs_total          Decimal            @default(0) @db.Decimal(14, 2)
+  payroll_total       Decimal            @default(0) @db.Decimal(14, 2)
+  tax_total           Decimal            @default(0) @db.Decimal(14, 2)
+  net_profit          Decimal            @default(0) @db.Decimal(14, 2)
+  cash_available      Decimal            @default(0) @db.Decimal(14, 2)
   source_fingerprint  Json?
   fingerprint_version Int?
   closed_at           DateTime?
@@ -736,4 +737,61 @@ model MonthlyClose {
   @@unique([user_id, year, month])
   @@index([year, month])
   @@map("monthly_closes")
+}
+
+enum InventorySnapshotStatus {
+  PENDING
+  COMPLETE
+  FAILED
+}
+
+model InventorySnapshot {
+  id                    Int                     @id @default(autoincrement())
+  shopify_connection_id Int
+  user_id               Int
+  taken_at              DateTime                @default(now())
+  status                InventorySnapshotStatus @default(PENDING)
+  total_units           Int                     @default(0)
+  total_cost            Decimal                 @default(0) @db.Decimal(14, 2)
+  products_valued       Int                     @default(0)
+  products_without_cost Int                     @default(0)
+  variants_untracked    Int                     @default(0)
+  failure_reason        String?
+  created_at            DateTime                @default(now())
+
+  shopify_connection ShopifyConnection       @relation(fields: [shopify_connection_id], references: [id], onDelete: Cascade)
+  user               User                    @relation(fields: [user_id], references: [id])
+  items              InventorySnapshotItem[]
+
+  @@index([user_id])
+  @@index([taken_at])
+  @@index([shopify_connection_id])
+  @@map("inventory_snapshots")
+}
+
+model InventorySnapshotItem {
+  id                        Int      @id @default(autoincrement())
+  snapshot_id               Int
+  shopify_variant_id        String?
+  shopify_inventory_item_id String?
+  sku                       String?
+  title                     String
+  location_name             String?
+  /**
+   * Nulo = existencia desconocida (la variante no la rastrea Shopify). Un cero
+   * diría «no tengo nada» y restaría del avalúo; son cosas distintas.
+   */
+  quantity_on_hand          Int?
+  tracked                   Boolean  @default(true)
+  unit_cost                 Decimal? @db.Decimal(14, 2)
+  total_cost                Decimal? @db.Decimal(14, 2)
+  cost_source               String?
+  created_at                DateTime @default(now())
+
+  snapshot InventorySnapshot @relation(fields: [snapshot_id], references: [id], onDelete: Cascade)
+
+  @@index([snapshot_id])
+  @@index([shopify_variant_id])
+  @@index([sku])
+  @@map("inventory_snapshot_items")
 }

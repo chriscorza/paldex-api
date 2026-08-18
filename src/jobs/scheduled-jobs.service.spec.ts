@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { PayrollService } from '../payroll/payroll.service';
 import { RecurringExpensesService } from '../recurring-expenses/recurring-expenses.service';
 import { ShopifyReconciliationService } from '../shopify/shopify-reconciliation.service';
+import { InventorySnapshotService } from '../inventory/inventory-snapshot.service';
 import { ScheduledJobsService } from './scheduled-jobs.service';
 
 describe('ScheduledJobsService', () => {
@@ -11,6 +12,7 @@ describe('ScheduledJobsService', () => {
   let payroll: any;
   let recurring: any;
   let reconciliation: any;
+  let inventorySnapshots: any;
 
   const nothingGenerated = { created: 0, paid: 0, skipped: 0 };
 
@@ -22,6 +24,9 @@ describe('ScheduledJobsService', () => {
       recurringExpense: {
         findMany: jest.fn().mockResolvedValue([{ user_id: 7 }]),
       },
+      shopifyConnection: {
+        findMany: jest.fn().mockResolvedValue([{ user_id: 7 }]),
+      },
     };
     payroll = { generate: jest.fn().mockResolvedValue(nothingGenerated) };
     recurring = { generate: jest.fn().mockResolvedValue(nothingGenerated) };
@@ -29,6 +34,16 @@ describe('ScheduledJobsService', () => {
       reconcileAll: jest
         .fn()
         .mockResolvedValue({ connections: 1, discrepancies: 0 }),
+    };
+    inventorySnapshots = {
+      captureForOwner: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          total_units: 120,
+          total_cost: 10200,
+          products_without_cost: 0,
+        },
+      ]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -38,6 +53,7 @@ describe('ScheduledJobsService', () => {
         { provide: PayrollService, useValue: payroll },
         { provide: RecurringExpensesService, useValue: recurring },
         { provide: ShopifyReconciliationService, useValue: reconciliation },
+        { provide: InventorySnapshotService, useValue: inventorySnapshots },
       ],
     }).compile();
 
@@ -141,6 +157,67 @@ describe('ScheduledJobsService', () => {
       await service.generatePayroll();
 
       expect(payroll.generate).toHaveBeenCalled();
+    });
+  });
+
+  describe('foto de inventario', () => {
+    /*
+     * Misma razón que la generación de gastos: la foto se cuelga del usuario y
+     * se valúa con **su** catálogo de costos. Una corrida global se las
+     * atribuiría todas al mismo dueño.
+     */
+    it('toma la foto con el contexto de cada dueño', async () => {
+      prisma.shopifyConnection.findMany.mockResolvedValue([
+        { user_id: 7 },
+        { user_id: 9 },
+      ]);
+
+      await service.captureInventory();
+
+      expect(inventorySnapshots.captureForOwner).toHaveBeenCalledTimes(2);
+      expect(inventorySnapshots.captureForOwner.mock.calls[0][0]).toEqual({
+        userId: 7,
+        scope: 'OWN',
+      });
+      expect(inventorySnapshots.captureForOwner.mock.calls[1][0]).toEqual({
+        userId: 9,
+        scope: 'OWN',
+      });
+    });
+
+    it('sólo mira las conexiones activas, una vez por dueño', async () => {
+      await service.captureInventory();
+
+      expect(prisma.shopifyConnection.findMany).toHaveBeenCalledWith({
+        where: { status: 'ACTIVE' },
+        distinct: ['user_id'],
+        select: { user_id: true },
+      });
+    });
+
+    it('un dueño que falla no detiene a los demás', async () => {
+      prisma.shopifyConnection.findMany.mockResolvedValue([
+        { user_id: 7 },
+        { user_id: 9 },
+      ]);
+      inventorySnapshots.captureForOwner
+        .mockRejectedValueOnce(new Error('token vencido'))
+        .mockResolvedValueOnce([
+          { id: 2, total_units: 1, total_cost: 1, products_without_cost: 0 },
+        ]);
+
+      await expect(service.captureInventory()).resolves.toBeUndefined();
+
+      expect(inventorySnapshots.captureForOwner).toHaveBeenCalledTimes(2);
+    });
+
+    it('no corre con los trabajos deshabilitados', async () => {
+      process.env.SCHEDULED_JOBS_ENABLED = 'false';
+
+      await service.captureInventory();
+
+      expect(prisma.shopifyConnection.findMany).not.toHaveBeenCalled();
+      expect(inventorySnapshots.captureForOwner).not.toHaveBeenCalled();
     });
   });
 });

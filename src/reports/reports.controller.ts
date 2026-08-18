@@ -20,6 +20,9 @@ import { SalesByEmployeeReportEntity } from './entities/sales-by-employee.entity
 import { InventoryCostService } from './inventory-cost.service';
 import { InventoryCostQueryDto } from './dto/inventory-cost-query.dto';
 import { InventoryCostReportEntity } from './entities/inventory-cost.entity';
+import { InventoryValuationService } from '../inventory/inventory-valuation.service';
+import { InventoryValuationQueryDto } from '../inventory/dto/inventory-valuation-query.dto';
+import { InventoryValuationReportEntity } from '../inventory/entities/inventory-valuation.entity';
 import { BadRequestException } from '@nestjs/common';
 import { LineItemProjectionService } from '../shopify/line-item-projection.service';
 import { escapeCsvField } from '../common/csv';
@@ -42,6 +45,7 @@ export class ReportsController {
     private readonly lineItemProjection: LineItemProjectionService,
     private readonly salesByEmployeeService: SalesByEmployeeService,
     private readonly inventoryCostService: InventoryCostService,
+    private readonly inventoryValuationService: InventoryValuationService,
   ) {}
 
   @Get('monthly')
@@ -196,6 +200,34 @@ export class ReportsController {
       scope: (request as any).permissionScope || 'OWN',
     };
     return this.inventoryCostService.getInventoryCost(ctx, query);
+  }
+
+  @Get('inventory-valuation')
+  @ApiOperation({
+    summary: 'Avalúo del inventario en existencia',
+    description:
+      'Cuánto vale la mercancía que está en el anaquel: por producto, piezas ' +
+      'en existencia × costo unitario, de mayor a menor. Lee la foto más ' +
+      'reciente tomada con `POST /inventory/snapshots` —o la que se indique con ' +
+      '`snapshot_id`, o la vigente a una fecha con `as_of`—, nunca consulta ' +
+      'Shopify en vivo. ' +
+      'No confundir con `GET /reports/inventory-cost`, que valúa lo *vendido* ' +
+      'en un periodo: éste valúa lo que *queda*. ' +
+      'No es costeo PEPS ni promedio ponderado: valúa al costo vigente, así ' +
+      'que un alza revalúa mercancía comprada barata. `cost_coverage` dice qué ' +
+      'parte de las piezas quedó valuada; por debajo de 100 el total es un piso.',
+  })
+  @ApiOkResponse({ type: InventoryValuationReportEntity })
+  async inventoryValuation(
+    @CurrentUser() user: { id: number },
+    @Req() request: any,
+    @Query() query: InventoryValuationQueryDto,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: (request as any).permissionScope || 'OWN',
+    };
+    return this.inventoryValuationService.getValuation(ctx, query);
   }
 
   @Get('shopify/category-profitability')

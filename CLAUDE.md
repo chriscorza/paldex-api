@@ -139,15 +139,58 @@ entry — sold or not — plus any product sold that has no entry, with `unit_co
   items, from any date, so a product that did not sell this period still shows a name.
 - **Totals cover the whole catalog, never the returned page.**
 
+## Inventory valuation (what is still on the shelf)
+
+`GET /reports/inventory-valuation` values the stock on hand: per product, units × unit cost,
+sorted by total descending. It reads a stored snapshot — it never queries Shopify live.
+`POST /inventory/snapshots` takes one on demand; a cron takes one a day per owner;
+`GET /inventory/snapshots` lists the history.
+
+Do not confuse it with `GET /reports/inventory-cost`, which values what was **sold** in a period.
+This one values what is **left**.
+
+- **Snapshots are history, never overwritten.** Inventory value is a balance-sheet figure *at a
+  date*; overwriting it loses the answer to "what was it worth on July 31st", which is what a
+  monthly close needs and what makes COGS-by-inventory-difference possible later.
+- **The cost is frozen into the row at capture time**, not recomputed on read. Otherwise fixing a
+  `ProductCost` today would silently change July's valuation.
+- **Cost precedence mirrors `resolveLineItemCost`**: `ProductCost` by variant → by SKU → Shopify's
+  `inventoryItem.unitCost`. The frozen-sale-cost step doesn't apply — unsold stock has no sale to
+  freeze against. Change one and you must change the other, or the valuation charges a cost the
+  books never did.
+- **GIDs are normalized to legacy numeric ids.** GraphQL returns `gid://shopify/ProductVariant/123`
+  while the rest of the project stores `123` (see `legacyId` in `shopify-backfill.service.ts`).
+  Storing the GID would make the by-variant cost lookup miss every time and fall back to Shopify's
+  cost without saying so.
+- **`on_hand`, never `available`.** `available` already subtracts units committed to unfulfilled
+  orders; that stock is still yours until it leaves the store, and using `available` undervalues
+  the inventory exactly in the busiest season.
+- **Unknown stock is `null`, not `0`.** A variant with `inventoryItem.tracked: false` has no count.
+  Zero would say "I have none" and subtract from the valuation; `products_untracked` publishes how
+  many are in that state.
+- **Negative stock is kept as-is.** Shopify allows overselling; rounding it to zero would hide a
+  real inventory discrepancy.
+- **A snapshot goes `PENDING → COMPLETE`**, and only `COMPLETE` ones are valued. A capture that
+  dies mid-pagination lands as `FAILED` with its partial rows (useful for debugging) but is never
+  valuable — otherwise a timeout yields a valuation that looks fine and is half missing.
+- **Capture seeds `ProductCost`** with `source: SHOPIFY_INVENTORY` when Shopify knows a cost the
+  owner has not captured, so the cost catalog fills itself.
+- **It is not FIFO or weighted-average costing.** Shopify's `unitCost` is one hand-typed number, so
+  a cost increase revalues stock that was bought cheap. Good for knowing how much cash is sitting
+  on the shelf; not a tax-grade cost of sales.
+- **With more than one Shopify connection**, the report values the most recent snapshot *of each*
+  and sums them — taking only the single latest would silently drop the other store's stock.
+
 ## Scheduled jobs
 
-`src/jobs/scheduled-jobs.service.ts` runs three crons in-process via `@nestjs/schedule`
+`src/jobs/scheduled-jobs.service.ts` runs four crons in-process via `@nestjs/schedule`
 (registered in `app.module.ts` with `ScheduleModule.forRoot()`):
 
 | Job | Cron | Zone |
 |---|---|---|
 | Payroll generation | `0 6 * * *` | business (`reportsTimeZone()`) |
 | Recurring-expense generation | `5 6 * * *` | business |
+| Inventory snapshot | `15 6 * * *` | business |
 | Shopify reconciliation | `20 * * * *` | UTC (hourly, zone is irrelevant) |
 
 Conventions to keep if you add another one:
@@ -162,7 +205,7 @@ Conventions to keep if you add another one:
 - **Never pass `already_paid`.** That flag is only for loading history by hand.
 - The crons must not run on more than one replica: `ScheduleModule` fires in every process.
 
-`SCHEDULED_JOBS_ENABLED=false` turns all three off. It is read at call time, not at module
+`SCHEDULED_JOBS_ENABLED=false` turns all four off. It is read at call time, not at module
 definition — `ConfigModule` loads `.env.prod` into `process.env` after decorators are evaluated,
 so reading it earlier would miss the production value. Absent variable means enabled: forgetting
 it on a deploy and silently not generating payroll is the worse failure.

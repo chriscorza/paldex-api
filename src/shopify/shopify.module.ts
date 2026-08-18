@@ -10,6 +10,7 @@ import { ShopifyTransactionSyncService } from './shopify-transaction-sync.servic
 import { ShopifyBackfillService } from './shopify-backfill.service';
 import { ShopifyReconciliationService } from './shopify-reconciliation.service';
 import { LineItemProjectionService } from './line-item-projection.service';
+import { ShopifyInventorySyncService } from './shopify-inventory-sync.service';
 import { PrismaModule } from 'src/prisma.module';
 
 @Module({
@@ -22,6 +23,7 @@ import { PrismaModule } from 'src/prisma.module';
     ShopifyBackfillService,
     ShopifyReconciliationService,
     LineItemProjectionService,
+    ShopifyInventorySyncService,
   ],
   imports: [PrismaModule],
   exports: [
@@ -29,6 +31,7 @@ import { PrismaModule } from 'src/prisma.module';
     ShopifyGraphQLService,
     LineItemProjectionService,
     ShopifyReconciliationService,
+    ShopifyInventorySyncService,
   ],
 })
 export class ShopifyModule {}

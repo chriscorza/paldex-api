@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma.module';
 import { ShopifyModule } from '../shopify/shopify.module';
+import { InventoryModule } from '../inventory/inventory.module';
 import { ReportsController } from './reports.controller';
 import { ReportsAggregationService } from './reports-aggregation.service';
 import { ProfitEngine } from './profit-engine.service';
@@ -10,7 +11,7 @@ import { SalesByEmployeeService } from './sales-by-employee.service';
 import { InventoryCostService } from './inventory-cost.service';
 
 @Module({
-  imports: [PrismaModule, ShopifyModule],
+  imports: [PrismaModule, ShopifyModule, InventoryModule],
   controllers: [ReportsController],
   providers: [
     ReportsAggregationService,
