@@ -22,8 +22,15 @@ export class InventorySnapshotEntity {
   @ApiProperty({ description: 'Piezas con existencia conocida.' })
   total_units: number;
 
-  @ApiProperty({ description: 'Lo que vale el inventario de esa foto.' })
+  @ApiProperty({ description: 'Lo que costó el inventario de esa foto.' })
   total_cost: number;
+
+  @ApiProperty({
+    description:
+      'Lo que entraría vendiéndolo todo a precio de lista, sin descuento. Es un ' +
+      'techo. Vale 0 en las fotos tomadas antes de que se capturaran precios.',
+  })
+  retail_value: number;
 
   @ApiProperty()
   products_valued: number;
@@ -44,6 +51,7 @@ export class InventorySnapshotEntity {
     this.status = partial.status;
     this.total_units = partial.total_units;
     this.total_cost = toMoneyNumber(partial.total_cost) ?? 0;
+    this.retail_value = toMoneyNumber(partial.retail_value) ?? 0;
     this.products_valued = partial.products_valued;
     this.products_without_cost = partial.products_without_cost;
     this.variants_untracked = partial.variants_untracked;
@@ -76,6 +84,7 @@ export const INVENTORY_SNAPSHOT_SELECT = {
   status: true,
   total_units: true,
   total_cost: true,
+  retail_value: true,
   products_valued: true,
   products_without_cost: true,
   variants_untracked: true,
