@@ -51,6 +51,24 @@ export class InventorySnapshotEntity {
   }
 }
 
+export class InventorySnapshotListEntity {
+  @ApiProperty({ type: [InventorySnapshotEntity] })
+  data: InventorySnapshotEntity[];
+
+  @ApiProperty({ description: 'Fotos del dueño en total, no de esta página.' })
+  total: number;
+
+  @ApiProperty()
+  page: number;
+
+  @ApiProperty()
+  limit: number;
+
+  constructor(partial: InventorySnapshotListEntity) {
+    Object.assign(this, partial);
+  }
+}
+
 export const INVENTORY_SNAPSHOT_SELECT = {
   id: true,
   shopify_connection_id: true,

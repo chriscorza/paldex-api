@@ -10,6 +10,7 @@ import { InventorySnapshotsQueryDto } from './dto/inventory-valuation-query.dto'
 import {
   INVENTORY_SNAPSHOT_SELECT,
   InventorySnapshotEntity,
+  InventorySnapshotListEntity,
 } from './entities/inventory-snapshot.entity';
 
 const Decimal = Prisma.Decimal;
@@ -86,12 +87,12 @@ export class InventorySnapshotService {
       this.prisma.inventorySnapshot.count({ where }),
     ]);
 
-    return {
+    return new InventorySnapshotListEntity({
       data: rows.map((row) => new InventorySnapshotEntity(row)),
       total,
       page,
       limit,
-    };
+    });
   }
 
   async capture(connectionId: number, userId: number) {

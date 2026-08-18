@@ -10,7 +10,10 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { OwnershipContext } from '../common/ownership';
 import { InventorySnapshotService } from './inventory-snapshot.service';
 import { InventorySnapshotsQueryDto } from './dto/inventory-valuation-query.dto';
-import { InventorySnapshotEntity } from './entities/inventory-snapshot.entity';
+import {
+  InventorySnapshotEntity,
+  InventorySnapshotListEntity,
+} from './entities/inventory-snapshot.entity';
 
 @ApiTags('Inventory')
 @ApiBearerAuth()
@@ -48,7 +51,7 @@ export class InventoryController {
       'conservan: tomar una nueva no pisa la anterior, y por eso se puede ' +
       'saber cuánto valía el inventario al cierre de un mes ya pasado.',
   })
-  @ApiOkResponse({ type: [InventorySnapshotEntity] })
+  @ApiOkResponse({ type: InventorySnapshotListEntity })
   list(
     @CurrentUser() user: { id: number },
     @Req() request: any,
