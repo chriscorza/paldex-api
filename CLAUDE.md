@@ -113,6 +113,32 @@ current month by default, `year`+`month` for any earlier one.
 - **There is no shift history**: a past month is recomputed with today's assignment. If two
   employees swap days, earlier reports change with them.
 
+## Inventory cost by product
+
+`GET /reports/inventory-cost` crosses the cost catalog with what was sold: every `ProductCost`
+entry — sold or not — plus any product sold that has no entry, with `unit_cost`, `units_sold` and
+`total_cost`, sorted by `total_cost` descending. No params means the current month;
+`year`+`month` or `start_date`+`end_date` for any other period.
+
+- **It is not a stock valuation.** Nothing in the schema stores units on hand (the Shopify sync
+  pulls `inventoryItem.unitCost`, never inventory levels), so `total_cost` values what was *sold*,
+  not what is left. A costly product with no sales shows zero, not the value of its shelf.
+- **It is not the P&L's COGS.** That comes from `CostOfGoodsSold` and is dated by collection;
+  this values at today's catalog cost and dates by order. `cogs_recorded` — the frozen cost that
+  actually hit results — is published per row so the gap is visible instead of surprising.
+- **Cost precedence is `ProductCost` by variant, then by SKU**, the same order `resolveLineItemCost`
+  uses to cost a sale. Diverging would make the report charge a cost the books never did. A product
+  the catalog holds by variant and a line item carrying only its SKU are one row, not two.
+- **`effective_from <= end_date`** — a future-dated price increase someone already captured does
+  not move the current period; among the effective ones the most recent wins.
+- **A product sold with no catalog entry still gets a row**, valued at the cost Shopify froze on the
+  sale (`cost_source: 'FROZEN'`, averaged per unit across orders), or with `unit_cost: null` when
+  there is none. `cost_coverage` reports what share of units got valued: below 100 `total_cost` is
+  a floor.
+- **`ProductCost` has no product name** — only variant and SKU. Titles are read back from the line
+  items, from any date, so a product that did not sell this period still shows a name.
+- **Totals cover the whole catalog, never the returned page.**
+
 ## Scheduled jobs
 
 `src/jobs/scheduled-jobs.service.ts` runs three crons in-process via `@nestjs/schedule`

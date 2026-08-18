@@ -17,6 +17,9 @@ import { ShopifyReportQueryDto } from './dto/shopify-report-query.dto';
 import { SalesByEmployeeQueryDto } from './dto/sales-by-employee-query.dto';
 import { SalesByEmployeeService } from './sales-by-employee.service';
 import { SalesByEmployeeReportEntity } from './entities/sales-by-employee.entity';
+import { InventoryCostService } from './inventory-cost.service';
+import { InventoryCostQueryDto } from './dto/inventory-cost-query.dto';
+import { InventoryCostReportEntity } from './entities/inventory-cost.entity';
 import { BadRequestException } from '@nestjs/common';
 import { LineItemProjectionService } from '../shopify/line-item-projection.service';
 import { escapeCsvField } from '../common/csv';
@@ -38,6 +41,7 @@ export class ReportsController {
     private readonly comparisonService: ComparisonService,
     private readonly lineItemProjection: LineItemProjectionService,
     private readonly salesByEmployeeService: SalesByEmployeeService,
+    private readonly inventoryCostService: InventoryCostService,
   ) {}
 
   @Get('monthly')
@@ -163,6 +167,35 @@ export class ReportsController {
       scope: (request as any).permissionScope || 'OWN',
     };
     return this.salesByEmployeeService.getSalesByEmployee(ctx, query);
+  }
+
+  @Get('inventory-cost')
+  @ApiOperation({
+    summary: 'Costo del inventario por producto',
+    description:
+      'El catálogo de costos completo —todo lo que tenga renglón en ' +
+      '`ProductCost`, se haya vendido o no— cruzado con las unidades vendidas ' +
+      'del periodo: costo unitario vigente, unidades y costo total, de mayor a ' +
+      'menor. Sin parámetros toma el mes en curso; acepta `year`+`month` o ' +
+      '`start_date`+`end_date`. Los productos vendidos que nadie costeó también ' +
+      'salen, con el costo que Shopify congeló en la venta o sin costo, y ' +
+      '`cost_coverage` dice qué parte de las unidades quedó valuada. ' +
+      'Ojo con dos cosas: no es un avalúo de existencias —el esquema no guarda ' +
+      'cuántas piezas hay, así que se valúa lo vendido, no lo que queda— y no ' +
+      'es el COGS del reporte mensual, que se fecha por cobro y sale de ' +
+      '`CostOfGoodsSold`; para comparar contra los libros está `cogs_recorded`.',
+  })
+  @ApiOkResponse({ type: InventoryCostReportEntity })
+  async inventoryCost(
+    @CurrentUser() user: { id: number },
+    @Req() request: any,
+    @Query() query: InventoryCostQueryDto,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: (request as any).permissionScope || 'OWN',
+    };
+    return this.inventoryCostService.getInventoryCost(ctx, query);
   }
 
   @Get('shopify/category-profitability')
