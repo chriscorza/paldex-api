@@ -71,6 +71,17 @@ RUN DATABASE_URL="mysql://build:build@localhost:3306/build" npx prisma generate
 
 COPY --from=builder --chown=node:node /app/dist ./dist
 
+# El changelog es la fuente de verdad de la versión: sin esta línea `/releases`
+# queda vacío ÚNICAMENTE en producción —en local funciona— que es la peor forma
+# de fallar. El `warn` del arranque es lo que lo delata si alguien la quita.
+COPY --from=builder --chown=node:node /app/CHANGELOG.md ./CHANGELOG.md
+
+# Coolify inyecta SOURCE_COMMIT como build arg. Un ARG no sobrevive al build,
+# así que hay que fijarlo como ENV para poder leerlo en tiempo de ejecución.
+# Sin él, /version reporta commit: null, nunca un valor inventado.
+ARG SOURCE_COMMIT=""
+ENV APP_COMMIT=$SOURCE_COMMIT
+
 EXPOSE 3000
 
 ENTRYPOINT ["docker-entrypoint.sh"]

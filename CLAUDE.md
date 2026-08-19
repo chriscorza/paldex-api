@@ -191,6 +191,41 @@ This one values what is **left**.
 - **With more than one Shopify connection**, the report values the most recent snapshot *of each*
   and sums them — taking only the single latest would silently drop the other store's stock.
 
+## Versión del producto y changelog
+
+Paldex tiene **una sola versión semántica**, la del producto entero, no una por servicio
+desplegable. `CHANGELOG.md` en la raíz de este repo es su fuente de verdad: la entrada más
+reciente es la versión vigente, y `package.json` debe coincidir con ella —
+`src/version/version-consistency.spec.ts` falla si se separan.
+
+Este repo es el dueño de la versión porque es quien puede publicarla por HTTP:
+
+- `GET /version` — público, junto a `/health`. Versión, `released_at`, commit y `started_at`.
+- `GET /releases` — sólo exige sesión (`@RequirePermissions()` sin argumentos, como `/user/me`),
+  ningún permiso concreto: atarlo a un permiso escondería las notas justo de quien menos
+  permisos tiene.
+- `GET /health` publica también la versión, para ver qué hay desplegado sin abrir la app.
+
+### Al publicar una versión
+
+1. Añadir la entrada a `CHANGELOG.md` **en el mismo commit que el cambio que describe**, con el
+   formato `## [1.4.0] - 2026-08-18` y secciones `### Added` / `### Changed` / `### Fixed` /
+   `### Removed`.
+2. Escribirla **para quien usa Paldex, no para quien lo programa**: qué puede hacer ahora el
+   negocio, no qué archivo se tocó. Por eso el changelog es manual y no se genera desde los commits.
+3. Subir `version` en `package.json` al mismo número. Criterio: **PATCH** correcciones visibles,
+   **MINOR** pantallas/reportes/campos nuevos, **MAJOR** algo que el usuario debe volver a aprender.
+
+### Detalles que muerden
+
+- El `Dockerfile` copia `CHANGELOG.md` a la imagen final y `.dockerignore` lo exceptúa del `*.md`.
+  Si se quita cualquiera de las dos cosas, `/releases` queda vacío **sólo en producción**.
+- El commit sale del build arg `SOURCE_COMMIT` que inyecta Coolify, fijado como `ENV APP_COMMIT`
+  (un `ARG` no sobrevive al build). Sin él el campo es `null`, nunca `"unknown"`.
+- El changelog se parsea una vez al arrancar. Un archivo ausente o mal formado deja un `warn` y una
+  lista vacía; **nunca** impide arrancar.
+- `released_at` es la fecha del changelog, no la del despliegue: es la que no cambia al reiniciar.
+
 ## Scheduled jobs
 
 `src/jobs/scheduled-jobs.service.ts` runs four crons in-process via `@nestjs/schedule`

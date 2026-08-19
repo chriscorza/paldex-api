@@ -32,10 +32,12 @@ import { JobsModule } from './jobs/jobs.module';
 import { AdminBootstrapService } from './admin-bootstrap.service';
 import { DataSeedService } from './data-seed.service';
 import { PrismaModule } from './prisma.module';
+import { VersionModule } from './version/version.module';
 
 @Module({
   imports: [
     PrismaModule,
+    VersionModule,
     AuthModule,
     ConfigModule.forRoot({
       envFilePath: '.env.prod',

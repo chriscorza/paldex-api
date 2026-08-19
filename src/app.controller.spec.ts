@@ -3,6 +3,7 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaService } from './prisma.service';
+import { VersionService } from './version/version.service';
 
 describe('AppController', () => {
   let appController: AppController;
@@ -13,7 +14,21 @@ describe('AppController', () => {
 
     const app: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
-      providers: [AppService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        AppService,
+        { provide: PrismaService, useValue: prisma },
+        {
+          provide: VersionService,
+          useValue: {
+            getVersionInfo: () => ({
+              version: '1.2.3',
+              released_at: '2026-08-18',
+              commit: null,
+              started_at: new Date().toISOString(),
+            }),
+          },
+        },
+      ],
     }).compile();
 
     appController = app.get<AppController>(AppController);
@@ -30,7 +45,11 @@ describe('AppController', () => {
       const result = await appController.health();
 
       expect(prisma.$queryRaw).toHaveBeenCalled();
-      expect(result).toMatchObject({ status: 'ok', database: 'up' });
+      expect(result).toMatchObject({
+        status: 'ok',
+        database: 'up',
+        version: '1.2.3',
+      });
     });
 
     it('throws 503 when the database is unreachable', async () => {

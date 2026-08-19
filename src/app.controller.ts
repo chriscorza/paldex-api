@@ -3,6 +3,7 @@ import { ApiTags, ApiExcludeEndpoint, ApiOperation } from '@nestjs/swagger';
 import { AppService } from './app.service';
 import { PrismaService } from './prisma.service';
 import { Public } from './auth/auth.decorator';
+import { VersionService } from './version/version.service';
 
 @ApiTags('health')
 @Controller()
@@ -10,6 +11,7 @@ export class AppController {
   constructor(
     private readonly appService: AppService,
     private readonly prisma: PrismaService,
+    private readonly version: VersionService,
   ) {}
 
   @Public()
@@ -42,6 +44,8 @@ export class AppController {
     return {
       status: 'ok',
       database: 'up',
+      // Para saber qué hay desplegado sin abrir la app ni pedir un token.
+      version: this.version.getVersionInfo().version,
       uptime: Math.round(process.uptime()),
       timestamp: new Date().toISOString(),
     };

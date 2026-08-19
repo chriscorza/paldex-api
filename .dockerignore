@@ -19,6 +19,10 @@ npm-debug.log*
 
 # Docs y herramientas de desarrollo
 *.md
+# ...salvo el changelog: es la fuente de verdad de la versión y el servicio lo
+# lee al arrancar. Sin esta excepción no llega ni al contexto de build y el
+# COPY del Dockerfile falla.
+!CHANGELOG.md
 openspec
 .claude
 test
