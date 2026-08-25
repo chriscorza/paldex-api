@@ -18,6 +18,29 @@ Este archivo es la **fuente de verdad de la versión del producto**: la entrada 
 reciente es la versión vigente, y `package.json` debe coincidir con ella. Hay una
 prueba que falla si se separan.
 
+## [1.2.0] - 2026-08-25
+
+### Changed
+
+- El asistente de inteligencia artificial ya no se conecta con una contraseña, sino con una
+  credencial que se puede revocar y reemplazar en cualquier momento. Una contraseña no caduca,
+  no se puede cambiar sin entrar a la base de datos, y quien la tenga es el asistente para
+  siempre; esto se corta con un clic y surte efecto de inmediato.
+- Se pueden tener varias credenciales activas a la vez, para cambiar la del asistente sin
+  dejarlo sin servicio: se emite la nueva, se cambia donde esté configurada y se revoca la
+  vieja.
+- Cada credencial guarda cuándo se usó por última vez, que es lo que sirve para saber si
+  alguien alcanzó a usarla en caso de que se filtre. Al revocarla no se borra, justo para no
+  perder ese rastro.
+- Una credencial del asistente sólo sirve para consultar el negocio a través del asistente: no
+  abre ninguna otra parte de Paldex, ni siquiera para emitir más credenciales.
+
+### Added
+
+- Nuevos permisos para decidir quién puede emitir, ver y revocar las credenciales del
+  asistente. La pantalla para administrarlas llega en una versión próxima; por ahora se operan
+  desde la API.
+
 ## [1.1.0] - 2026-08-25
 
 ### Added

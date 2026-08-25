@@ -39,8 +39,42 @@ model User {
   invitation               Invitation?               @relation("InvitationUser")
   invitationsSent          Invitation[]              @relation("InvitationInvitedBy")
   inventorySnapshots       InventorySnapshot[]
+  mcpApiKeys               McpApiKey[]               @relation("McpApiKeyOwner")
+  mcpApiKeysIssued         McpApiKey[]               @relation("McpApiKeyCreatedBy")
 
   @@map("users")
+}
+
+/**
+ * Credencial de máquina para el servidor MCP: revocable, rotable y sin
+ * contraseña de por medio.
+ *
+ * Una contraseña es la credencial equivocada para un agente —es permanente,
+ * acuña tokens nuevos para siempre y no hay endpoint para rotarla—. Esto sí se
+ * revoca en una petición y admite varias llaves vivas a la vez, que es lo que
+ * permite rotar sin tirar el servicio.
+ *
+ * Del token sólo se guarda el prefijo en claro (para buscar por índice) y el
+ * hash del secreto. El token completo se muestra una sola vez, al crearlo: si
+ * se pudiera recuperar, la base sería un almacén de credenciales.
+ */
+model McpApiKey {
+  id           Int       @id @default(autoincrement())
+  user_id      Int
+  name         String
+  token_prefix String    @unique
+  token_hash   String
+  last_used_at DateTime?
+  expires_at   DateTime?
+  revoked_at   DateTime?
+  created_at   DateTime  @default(now())
+  created_by   Int?
+
+  user      User  @relation("McpApiKeyOwner", fields: [user_id], references: [id])
+  createdBy User? @relation("McpApiKeyCreatedBy", fields: [created_by], references: [id])
+
+  @@index([user_id])
+  @@map("mcp_api_keys")
 }
 
 enum InvitationStatus {

@@ -8,13 +8,15 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 import { env } from 'process';
-import { IS_PUBLIC_KEY } from 'src/globalConstants';
+import { ALLOW_API_KEY, IS_PUBLIC_KEY } from 'src/globalConstants';
+import { API_KEY_PREFIX, McpKeysService } from 'src/mcp-keys/mcp-keys.service';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
     private jwtService: JwtService,
     private reflector: Reflector,
+    private mcpKeysService: McpKeysService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -32,6 +34,40 @@ export class AuthGuard implements CanActivate {
     if (!token) {
       throw new UnauthorizedException();
     }
+
+    /*
+     * Este guard es global: lo que se decida aquí aplica a toda la API, así que
+     * el camino de las API keys falla cerrado.
+     *
+     * El orden importa. Primero se mira si la ruta acepta llaves y, si no, se
+     * corta —sin buscarla siquiera y sin caer al camino del JWT, que la
+     * rechazaría igual pero por accidente en vez de por diseño—. Así el valor
+     * por omisión de cualquier ruta existente o futura es «aquí no entran».
+     */
+    if (token.startsWith(API_KEY_PREFIX)) {
+      const allowsApiKey = this.reflector.getAllAndOverride<boolean>(
+        ALLOW_API_KEY,
+        [context.getHandler(), context.getClass()],
+      );
+      if (!allowsApiKey) {
+        throw new UnauthorizedException();
+      }
+
+      const key = await this.mcpKeysService.verify(token);
+      if (!key) {
+        throw new UnauthorizedException();
+      }
+
+      /*
+       * La misma forma que deja el JWT (`{ id, email }`): así PermissionsGuard,
+       * McpAuthorizationService y @CurrentUser no distinguen —ni tienen por qué—
+       * con qué credencial llegó quien pregunta. La llave autentica; los
+       * permisos siguen saliendo del rol del usuario.
+       */
+      request['user'] = { id: key.user_id, email: key.email };
+      return true;
+    }
+
     try {
       const payload = await this.jwtService.verifyAsync(token, {
         secret: env.JWT_SECRET,

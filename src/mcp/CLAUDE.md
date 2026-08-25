@@ -57,14 +57,41 @@ if you add a tool, that test is what keeps this true.
 
 ## Auth model
 
-The MCP endpoint sits behind the same global `AuthGuard` as every other route — a normal Paldex
-JWT Bearer token, obtained via `POST /auth/login` like any user. There is no separate MCP
-authentication mechanism. The intended caller is a dedicated `ai_agent` system-adjacent role and
-service-account user (created manually via `/roles` and `/user`, not seeded — see design.md
-"Migration Plan"), holding only the permissions the current tool set needs: `expense:read` and
-`expense:create` scoped `OWN`. Never point a human user's JWT at this endpoint for anything but
-testing — the whole point of the `ai_agent` role is that its permissions are the actual ceiling
-on what an AI agent can do here, narrower than what an admin or regular user account can do.
+**The agent authenticates with an API key, never a password.** Mint one with `POST /mcp-keys` for
+the `ai_agent` service account; the full token comes back exactly once and is unrecoverable
+afterward. See `src/mcp-keys/`.
+
+The endpoint also accepts a normal JWT, which is what makes it testable by hand, but never give
+the service account a password: a password is permanent, mints fresh tokens forever, and there is
+no endpoint to rotate one. The account's `password` should be left `null`.
+
+The intended caller is a dedicated `ai_agent` system-adjacent role and service-account user
+(created manually via `/roles` and `/user`, not seeded — see design.md "Migration Plan"), holding
+only the permissions the current tool set needs. Never point a human user's JWT at this endpoint
+for anything but testing: the whole point of the `ai_agent` role is that its permissions are the
+actual ceiling on what an AI agent can do here, narrower than what an admin or regular user can.
+
+**A key authenticates; the role authorizes.** A valid key resolves to its owning user and nothing
+more — `PermissionsGuard` and `McpAuthorizationService` cannot tell it from a JWT, and the role
+still decides every tool call.
+
+**A key works only on `POST /mcp`.** `AuthGuard` rejects one on any route without
+`@AllowApiKey()` — including `/mcp-keys` itself, so a leaked key cannot mint more. The opt-in is
+checked *before* the key is looked up, so the default for every existing and future route is
+"keys don't work here".
+
+### Revoking access — two independent ways
+
+| What you do | Effect | Kills a credential already in hand? |
+|---|---|---|
+| `DELETE /mcp-keys/:id` | That key stops working on its next request | **Yes, immediately** |
+| Strip the role's permissions (`PUT /roles/:id/permissions`) | Authentication still succeeds, every tool call fails | **Yes, immediately** |
+| Revoke the account's *invitation* | Blocks new logins only | **No — a live JWT keeps working up to 7 days** |
+
+That third row is the trap, and it is why this exists. Revoking the invitation is the intuitive
+"cut off access" move and it is the one that does **not** kill a token already issued: `AuthGuard`
+verifies a JWT without touching the database, so nothing revokes it before it expires. The first
+two work on the next request precisely because both hit the DB every call.
 
 ## Transport
 

@@ -29,6 +29,7 @@ import { ReceivablesModule } from './receivables/receivables.module';
 import { MonthlyCloseModule } from './monthly-close/monthly-close.module';
 import { InvitationsModule } from './invitations/invitations.module';
 import { McpModule } from './mcp/mcp.module';
+import { McpKeysModule } from './mcp-keys/mcp-keys.module';
 import { JobsModule } from './jobs/jobs.module';
 import { AdminBootstrapService } from './admin-bootstrap.service';
 import { DataSeedService } from './data-seed.service';
@@ -65,6 +66,7 @@ import { VersionModule } from './version/version.module';
     MonthlyCloseModule,
     InvitationsModule,
     McpModule,
+    McpKeysModule,
     /*
      * Réplica única: `ScheduleModule` corre los crons en cada proceso, así que
      * levantar una segunda instancia de la API duplicaría cada corrida. La

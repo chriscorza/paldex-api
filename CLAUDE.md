@@ -20,6 +20,20 @@ Special cases:
   checked against a specific permission at call time instead of via the route decorator. See
   `src/mcp/CLAUDE.md`.
 
+### API keys (`pldx_…`) authenticate only where a route opts in
+
+`AuthGuard` accepts a `pldx_` bearer token **only** on routes carrying `@AllowApiKey()`, and today
+that is `POST /mcp` and nothing else. On any other route a valid key is `401` — it is not a
+credential for the API at large, and a leaked one cannot even reach `/mcp-keys` to mint more. The
+opt-in is checked before the key is looked up, so every route that does not ask for keys refuses
+them by default, now and in the future.
+
+A key authenticates but grants nothing: permissions still resolve from the owning user's role, so
+`PermissionsGuard` and `McpAuthorizationService` behave identically whether the caller arrived with
+a key or a JWT. Issue and revoke them at `/mcp-keys` (`mcp_key:create` / `read` / `delete`);
+revocation takes effect on the next request. Details and the revocation table are in
+`src/mcp/CLAUDE.md`.
+
 ### Adding a new permission
 
 1. Add entry to `PERMISSION_CATALOG` array in `src/permissions/permission-catalog.ts`

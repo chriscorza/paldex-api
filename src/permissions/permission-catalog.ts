@@ -154,6 +154,14 @@ export const PERMISSION_CATALOG = [
   { resource: 'invitation', action: 'create' },
   { resource: 'invitation', action: 'read' },
   { resource: 'invitation', action: 'delete' },
+  /*
+   * Emitir y revocar las credenciales del agente de IA. Sin variante OWN a
+   * propósito: emitir una llave para la cuenta de servicio es una operación de
+   * administración, no algo que cada quien haga sobre lo suyo.
+   */
+  { resource: 'mcp_key', action: 'create' },
+  { resource: 'mcp_key', action: 'read' },
+  { resource: 'mcp_key', action: 'delete' },
 ] as const;
 
 export type PermissionString = (typeof PERMISSION_CATALOG)[number] extends {

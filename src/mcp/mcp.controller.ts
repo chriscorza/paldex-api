@@ -3,6 +3,7 @@ import { ApiExcludeEndpoint } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { RequirePermissions } from '../auth/permissions.decorator';
+import { AllowApiKey } from '../auth/allow-api-key.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { McpToolsService } from './mcp-tools.service';
 
@@ -20,6 +21,12 @@ export class McpController {
 
   @Post()
   @RequirePermissions()
+  /*
+   * La única ruta de la API que acepta una API key. En cualquier otra, una
+   * llave —aunque sea válida— se rechaza con 401, así que lo que alcanza una
+   * llave filtrada se queda en la superficie de tools de MCP.
+   */
+  @AllowApiKey()
   @ApiExcludeEndpoint()
   async handle(
     @Req() req: Request,
