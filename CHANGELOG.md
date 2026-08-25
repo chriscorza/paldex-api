@@ -18,6 +18,29 @@ Este archivo es la **fuente de verdad de la versión del producto**: la entrada 
 reciente es la versión vigente, y `package.json` debe coincidir con ella. Hay una
 prueba que falla si se separan.
 
+## [1.1.0] - 2026-08-25
+
+### Added
+
+- Ventas día por día: nuevo reporte que muestra cuánto se vendió cada día del periodo que
+  elijas. Los días sin ventas aparecen en cero en vez de faltar, para no confundir «no se
+  vendió nada» con «no hay dato».
+- Paldex se puede conectar a un asistente de inteligencia artificial para preguntarle por el
+  negocio con tus propias palabras. El asistente sólo consulta: puede ver ventas y gastos, y
+  lo único que puede registrar es un gasto. Nunca alcanza la nómina, los pagos de impuestos,
+  los usuarios y permisos ni las credenciales de Shopify. El acceso se le quita en cualquier
+  momento desde los permisos de su rol.
+
+### Changed
+
+- Ventas por empleado: además de por mes, ahora se puede pedir por cualquier rango de fechas,
+  y filtrar a una sola persona o a varias para compararlas. Al filtrar se sigue mostrando el
+  total del periodo completo, para saber qué parte de las ventas representa lo que estás
+  viendo.
+- Ventas por empleado: cada renglón dice si la persona sigue activa. Un empleado dado de baja
+  ya no tiene días asignados, así que aparecía en ceros como si no hubiera vendido, cuando lo
+  cierto es que sus días ahora son de alguien más.
+
 ## [1.0.0] - 2026-08-18
 
 Primera versión publicada. Resume lo que Paldex ya hace tras varios meses de trabajo.

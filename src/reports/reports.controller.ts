@@ -20,6 +20,9 @@ import { SalesByEmployeeReportEntity } from './entities/sales-by-employee.entity
 import { InventoryCostService } from './inventory-cost.service';
 import { InventoryCostQueryDto } from './dto/inventory-cost-query.dto';
 import { InventoryCostReportEntity } from './entities/inventory-cost.entity';
+import { DailySalesService } from './daily-sales.service';
+import { DailySalesQueryDto } from './dto/daily-sales-query.dto';
+import { DailySalesReportEntity } from './entities/daily-sales.entity';
 import { InventoryValuationService } from '../inventory/inventory-valuation.service';
 import { InventoryValuationQueryDto } from '../inventory/dto/inventory-valuation-query.dto';
 import { InventoryValuationReportEntity } from '../inventory/entities/inventory-valuation.entity';
@@ -46,7 +49,37 @@ export class ReportsController {
     private readonly salesByEmployeeService: SalesByEmployeeService,
     private readonly inventoryCostService: InventoryCostService,
     private readonly inventoryValuationService: InventoryValuationService,
+    private readonly dailySalesService: DailySalesService,
   ) {}
+
+  @Get('sales-daily')
+  @ApiOperation({
+    summary: 'Ventas día por día en un rango',
+    description:
+      'Un renglón por día del rango, con `net_sales`, `gross_sales`, ' +
+      'descuentos, comisiones, envío cobrado y número de ventas, más los ' +
+      'totales del rango completo. ' +
+      'El día es el de la tienda, no el de UTC: una venta de las 19:00 en CDMX ' +
+      'cuenta en ese día aunque en UTC ya sea el siguiente. ' +
+      'Los días sin ventas salen en cero y nunca se omiten, para que no se ' +
+      'confunda «no vendió nada» con «no hay dato». ' +
+      'El rango es obligatorio —no hay «mes en curso» por defecto— y no puede ' +
+      'pasar de 366 días: un rango mayor se rechaza en vez de recortarse. ' +
+      'La suma de los días de un mes cuadra con `net_sales` de ' +
+      '`GET /reports/monthly`.',
+  })
+  @ApiOkResponse({ type: DailySalesReportEntity })
+  async salesDaily(
+    @CurrentUser() user: { id: number },
+    @Req() request: any,
+    @Query() query: DailySalesQueryDto,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: (request as any).permissionScope || 'OWN',
+    };
+    return this.dailySalesService.getDailySales(ctx, query);
+  }
 
   @Get('monthly')
   async monthly(
@@ -148,17 +181,30 @@ export class ReportsController {
     summary: 'Ventas del periodo atribuidas a cada empleado',
     description:
       'Reparte las ventas según el día de la semana que cada empleado tiene en ' +
-      '`sales_days` —el día se calcula en la zona del negocio, no en UTC—. Sin ' +
-      'parámetros devuelve el mes en curso; con `year` y `month`, cualquier mes ' +
-      'anterior. Las ventas de los días que ningún empleado activo tiene ' +
-      'asignados van al renglón `unassigned`, que aparece siempre para que la ' +
-      'suma se pueda comparar con `GET /reports/monthly`. ' +
+      '`sales_days` —el día se calcula en la zona del negocio, no en UTC—. ' +
+      'El periodo se pide con `year`+`month` o con `start_date`+`end_date`, no ' +
+      'con ambos; sin nada, el mes en curso. `period.year`/`period.month` sólo ' +
+      'se llenan cuando el periodo es exactamente un mes de calendario. ' +
+      'Con `employee_ids` se acota a una persona o a varias; sin él van todas. ' +
+      'Las ventas de los días que ningún empleado activo tiene asignados van al ' +
+      'renglón `unassigned`, que aparece siempre salvo que se filtre por ' +
+      'empleado (se recupera con `include_unassigned`). ' +
+      '`totals` suma los renglones devueltos y `period_totals` el periodo ' +
+      'completo se haya filtrado o no: es lo que deja comparar contra ' +
+      '`GET /reports/monthly` incluso al filtrar, y lo que dice si ese ' +
+      '«Luis: 40,000» es casi todo el periodo o una migaja. ' +
       'Incluye el costo de lo vendido y la utilidad bruta de cada turno, con ' +
       '`cost_data_coverage` diciendo de cuántas de esas ventas se conoce el ' +
       'costo: por debajo de 100 la utilidad es un techo, no una cifra firme. ' +
       'Es utilidad de producto, no descuenta sueldos ni gastos de la tienda. ' +
-      'Ojo: no hay historial de turnos —un mes pasado se recalcula con la ' +
-      'asignación de días vigente hoy, no con la que hubiera entonces.',
+      'Un empleado inactivo no tiene días asignados, así que sale en ceros: por ' +
+      'eso cada renglón trae `active`, para que ese cero no se lea como «no ' +
+      'vendió nada» cuando sus días ya son de alguien más. ' +
+      'Ojo: no hay historial de turnos —el periodo se recalcula con la ' +
+      'asignación de días vigente hoy, no con la que hubiera entonces—. Con ' +
+      'rangos esto pesa más: un rango que cruza una reasignación reporta todo ' +
+      'el tramo bajo los dueños de hoy, así que `sales_days` va en cada renglón ' +
+      'para ver con qué asignación se calculó la cifra.',
   })
   @ApiOkResponse({ type: SalesByEmployeeReportEntity })
   async salesByEmployee(

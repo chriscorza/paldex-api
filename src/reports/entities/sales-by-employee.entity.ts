@@ -1,11 +1,22 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class SalesByEmployeePeriodEntity {
-  @ApiProperty({ example: 2026 })
-  year: number;
+  @ApiProperty({
+    nullable: true,
+    example: 2026,
+    description:
+      'Sólo cuando el periodo es exactamente un mes de calendario; `null` en ' +
+      'cualquier otro rango. Nunca se deduce de `start_date`: un 15-ene a ' +
+      '15-feb diría «enero», que es una respuesta falsa dicha con seguridad.',
+  })
+  year: number | null;
 
-  @ApiProperty({ example: 8 })
-  month: number;
+  @ApiProperty({
+    nullable: true,
+    example: 8,
+    description: 'Ver `year`.',
+  })
+  month: number | null;
 
   @ApiProperty({
     description:
@@ -33,6 +44,15 @@ export class SalesByEmployeeRowEntity {
 
   @ApiProperty({ example: 'Luis' })
   employee_name: string;
+
+  @ApiProperty({
+    description:
+      'Si el empleado está activo. Un inactivo no tiene días asignados, así ' +
+      'que sale en ceros: sin esta bandera ese cero se lee como «no vendió ' +
+      'nada» cuando lo cierto es que sus días ahora son de alguien más. ' +
+      '`true` en el renglón `unassigned`.',
+  })
+  active: boolean;
 
   @ApiProperty({
     type: [Number],
@@ -130,10 +150,22 @@ export class SalesByEmployeeReportEntity {
   @ApiProperty({
     type: SalesByEmployeeTotalsEntity,
     description:
-      'La suma de todos los renglones. `net_sales`, `cogs` y `gross_profit` ' +
-      'deben coincidir con los de `GET /reports/monthly` del mismo periodo.',
+      'La suma de los renglones devueltos. Sin filtro es igual a ' +
+      '`period_totals`; con filtro cubre sólo lo seleccionado.',
   })
   totals: SalesByEmployeeTotalsEntity;
+
+  @ApiProperty({
+    type: SalesByEmployeeTotalsEntity,
+    description:
+      'El periodo completo —todos los empleados más `unassigned`—, se haya ' +
+      'filtrado o no. Es lo que mantiene comprobable el reporte al filtrar: ' +
+      'un «Luis: 40,000» solo no dice si es casi todo el periodo o una migaja, ' +
+      'y el cuadre contra `GET /reports/monthly` dejaría de sostenerse en ' +
+      'cuanto alguien filtrara. `net_sales`, `cogs` y `gross_profit` de aquí ' +
+      'deben coincidir con los de `GET /reports/monthly` del mismo periodo.',
+  })
+  period_totals: SalesByEmployeeTotalsEntity;
 
   constructor(partial: SalesByEmployeeReportEntity) {
     Object.assign(this, partial);

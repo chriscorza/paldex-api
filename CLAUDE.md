@@ -16,6 +16,9 @@ See `src/permissions/permission-catalog.ts` for the current list of resources/ac
 Special cases:
 - `user:assign_role` — used for `PATCH /user/:id/role`
 - `/user/me` endpoints only require authentication, no specific permission
+- `POST /mcp` only requires authentication too — it's one route serving many MCP tools, each
+  checked against a specific permission at call time instead of via the route decorator. See
+  `src/mcp/CLAUDE.md`.
 
 ### Adding a new permission
 
@@ -55,6 +58,9 @@ it is never hand-written, so it cannot drift from what the API actually does.
 
 Shopify integration (OAuth flow, env vars) is documented in `src/shopify/CLAUDE.md`.
 
+The MCP server exposed to AI agents (tool ↔ REST pairing, the structural denylist, the `ai_agent`
+service-account convention) is documented in `src/mcp/CLAUDE.md`.
+
 ## Money handling
 
 All monetary columns in the schema use `Decimal(14,2)`. The API always returns **numbers** (not strings) in JSON responses by converting `Decimal → number` in entity projections via `src/common/money.ts`.
@@ -84,12 +90,38 @@ Set `REPORTS_TIMEZONE` to an IANA name to change it; it defaults to `America/Mex
 This matters when reconciling against Shopify: its sales reports use the shop's zone, so filtering
 in UTC shifts a Mexican shop's month by 6 hours and drops the last (busiest) evening of it.
 
+## Daily sales
+
+`GET /reports/sales-daily` breaks sales down day by day over a date range: `net_sales`,
+`gross_sales`, `discounts`, `fees`, `shipping_charged` and `sales_count` per day, plus totals for
+the range. It is also the `sales_daily` MCP tool.
+
+- **The range is required and capped at 366 days.** There is no "current month" default — the
+  caller resolves what the user meant and passes explicit dates, so there is only one clock. Over
+  the cap is a `400`, never a truncated series: a truncated series looks complete and every total
+  computed from it is quietly wrong.
+- **Days are bucketed in Node, never in SQL.** Same trap as sales-by-employee, and for two
+  independent reasons: `DATE(date)` reads the server's zone (UTC in the container), which files the
+  whole evening under tomorrow; and `CONVERT_TZ` needs MySQL's timezone tables, which the
+  `mysql:8.4` image does not ship — without them it returns `NULL` and the report silently reads
+  zero. `dateKeyInZone()` in `src/common/timezone.ts` does it with `Intl`.
+- **Days with no sales are returned as zero rows, never omitted.** Otherwise "sold nothing" and "no
+  data" are indistinguishable, and they lead to opposite conclusions about the business.
+- **It reconciles with the monthly report**: summing the days of a month equals `net_sales` from
+  `GET /reports/monthly`. That holds because it reads the same `Income` fields with the same filter
+  and, like that report, deliberately does **not** filter by `income_type`.
+- **It is sales only** — no COGS, profit or margin. Cost data carries its own coverage caveats
+  (`cost_data_coverage`), and mixing them in would smuggle an unguarded profit number into a report
+  labelled "sales".
+
 ## Sales attributed to employees
 
 `Employee.sales_days` holds the weekdays whose sales belong to that employee (`1` = Monday …
 `7` = Sunday, ISO-8601; `null`/`[]` means none). `GET /reports/sales-by-employee` reports
-`net_sales`, `gross_sales`, `sales_count`, `cogs` and `gross_profit` per employee for a month —
-current month by default, `year`+`month` for any earlier one.
+`net_sales`, `gross_sales`, `sales_count`, `cogs` and `gross_profit` per employee — current month
+by default, `year`+`month` for any other month, or `start_date`+`end_date` for an arbitrary range
+(the two forms are mutually exclusive, as in `GET /reports/monthly`). `employee_ids` narrows it to
+one person or a few.
 
 - **The weekday is computed in the business time zone** via `weekdayInZone()`, never `getDay()`:
   in CDMX a 19:00 Friday sale is Saturday in UTC and would be credited to the weekend shift.
@@ -110,8 +142,27 @@ current month by default, `year`+`month` for any earlier one.
 - **`cost_data_coverage` guards that number.** A sale with no captured cost subtracts nothing, so
   its profit comes out whole. Such sales are still counted (dropping them would break the reconcile
   against sales), so the row publishes how many had cost: below 100% the profit is a ceiling.
-- **There is no shift history**: a past month is recomputed with today's assignment. If two
-  employees swap days, earlier reports change with them.
+- **`period_totals` is what keeps the report checkable under filtering.** `totals` sums the rows
+  returned; `period_totals` sums the whole period — every employee plus `unassigned` — whether or
+  not `employee_ids` was passed. Without it, "Luis: 40,000" gives no way to tell whether that is
+  most of the period or a sliver, and the reconcile against `GET /reports/monthly` would quietly
+  stop holding the moment anyone filtered. Unfiltered, the two blocks are equal.
+- **Filtering happens after attribution, never in the query.** Sales must be attributed across all
+  employees to know what falls to `unassigned`; narrowing the income query first would push other
+  people's days into `unassigned` and make one employee's number depend on who else was asked for.
+- **A row carries `active`, and an inactive employee asked for by id comes back flagged.** Inactive
+  employees hold no days, so their row is all zeros — indistinguishable from "sold nothing" unless
+  the flag says otherwise, when the truth is that their days now belong to someone else. An
+  `employee_ids` entry matching no employee of this owner is a `400`: that is a typo or a stale id,
+  not a fact about the business.
+- **`period.year`/`period.month` are only populated when the period is exactly one calendar month**
+  — requested either way. For any other range they are `null`. Deriving a month from `start_date`
+  would make 15 Jan – 15 Feb announce itself as January: a wrong answer stated confidently.
+- **There is no shift history**: a past period is recomputed with today's assignment. If two
+  employees swap days, earlier reports change with them. **Arbitrary ranges make this easier to
+  hit** — a range spanning a reassignment scores the whole span under today's owners, and crossing
+  months hides it better than a month-at-a-time view did. `sales_days` is returned on every row so
+  the assignment a number was computed under is visible next to the number.
 
 ## Inventory cost by product
 

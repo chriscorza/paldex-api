@@ -5,6 +5,8 @@ import {
   currentMonthInZone,
   reportsTimeZone,
   weekdayInZone,
+  dateKeyInZone,
+  eachDateKeyInZone,
 } from './timezone';
 
 const CDMX = 'America/Mexico_City';
@@ -156,6 +158,86 @@ describe('timezone — rangos de los reportes', () => {
 
     it('cae en la zona del negocio cuando no se le pasa una', () => {
       expect(weekdayInZone(new Date('2026-08-15T01:00:00Z'))).toBe(5);
+    });
+  });
+
+  describe('dateKeyInZone', () => {
+    /*
+     * El caso que rompe el reporte diario: agrupando por el timestamp crudo,
+     * toda la tarde-noche —la de más venta— se archiva en el día siguiente.
+     */
+    it('deja la venta de la tarde en su día local, no en el de UTC', () => {
+      const sieteDeLaTarde = new Date('2026-08-06T01:00:00Z');
+
+      expect(dateKeyInZone(sieteDeLaTarde, CDMX)).toBe('2026-08-05');
+      expect(dateKeyInZone(sieteDeLaTarde, 'UTC')).toBe('2026-08-06');
+    });
+
+    it('cae en la zona del negocio cuando no se le pasa una', () => {
+      expect(dateKeyInZone(new Date('2026-08-06T01:00:00Z'))).toBe(
+        '2026-08-05',
+      );
+    });
+  });
+
+  describe('eachDateKeyInZone', () => {
+    it('lista el rango completo, con los dos extremos dentro', () => {
+      expect(
+        eachDateKeyInZone(
+          startOfDayInZone('2026-08-01', CDMX),
+          endOfDayInZone('2026-08-05', CDMX),
+          CDMX,
+        ),
+      ).toEqual([
+        '2026-08-01',
+        '2026-08-02',
+        '2026-08-03',
+        '2026-08-04',
+        '2026-08-05',
+      ]);
+    });
+
+    it('un solo día devuelve un solo elemento', () => {
+      expect(
+        eachDateKeyInZone(
+          startOfDayInZone('2026-08-03', CDMX),
+          endOfDayInZone('2026-08-03', CDMX),
+          CDMX,
+        ),
+      ).toEqual(['2026-08-03']);
+    });
+
+    it('cruza fin de mes y fin de año sin saltarse un día', () => {
+      expect(
+        eachDateKeyInZone(
+          startOfDayInZone('2026-12-30', CDMX),
+          endOfDayInZone('2027-01-02', CDMX),
+          CDMX,
+        ),
+      ).toEqual(['2026-12-30', '2026-12-31', '2027-01-01', '2027-01-02']);
+    });
+
+    /*
+     * Sumando 24 h a un instante, el día local de 25 horas del cambio de horario
+     * repite fecha y el de 23 se la salta. Madrid sí cambia de horario; CDMX
+     * dejó de hacerlo en 2022.
+     */
+    it('no repite ni se salta días en el cambio de horario', () => {
+      const madrid = 'Europe/Madrid';
+      const dias = eachDateKeyInZone(
+        startOfDayInZone('2026-10-23', madrid),
+        endOfDayInZone('2026-10-27', madrid),
+        madrid,
+      );
+
+      expect(dias).toEqual([
+        '2026-10-23',
+        '2026-10-24',
+        '2026-10-25',
+        '2026-10-26',
+        '2026-10-27',
+      ]);
+      expect(new Set(dias).size).toBe(dias.length);
     });
   });
 

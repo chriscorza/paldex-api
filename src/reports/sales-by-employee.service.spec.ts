@@ -8,8 +8,8 @@ const Decimal = Prisma.Decimal;
 
 const ctx = { userId: 1, scope: 'OWN' as const };
 
-const LUIS = { id: 1, name: 'Luis', sales_days: [1, 2, 3, 4, 5] };
-const FELIX = { id: 2, name: 'Félix', sales_days: [6, 7] };
+const LUIS = { id: 1, name: 'Luis', sales_days: [1, 2, 3, 4, 5], active: true };
+const FELIX = { id: 2, name: 'Félix', sales_days: [6, 7], active: true };
 
 /*
  * Agosto de 2026 en CDMX: el 3 es lunes y el 8 y 9 son sábado y domingo. Las
@@ -112,7 +112,7 @@ describe('SalesByEmployeeService', () => {
     it('no incluye a los empleados sin días asignados', async () => {
       prisma.employee.findMany.mockResolvedValue([
         LUIS,
-        { id: 3, name: 'Contadora', sales_days: null },
+        { id: 3, name: 'Contadora', sales_days: null, active: true },
       ]);
 
       const report = await service.getSalesByEmployee(ctx, {
@@ -181,7 +181,7 @@ describe('SalesByEmployeeService', () => {
 
     it('manda a unassigned las ventas de un día que nadie tiene', async () => {
       prisma.employee.findMany.mockResolvedValue([
-        { id: 1, name: 'Luis', sales_days: [1, 2, 4, 5] }, // sin miércoles
+        { id: 1, name: 'Luis', sales_days: [1, 2, 4, 5], active: true }, // sin miércoles
       ]);
       prisma.income.findMany.mockResolvedValue([
         income(1, '2026-08-05T18:00:00Z', 800), // miércoles
@@ -489,7 +489,7 @@ describe('SalesByEmployeeService', () => {
 
       expect(prisma.employee.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ user_id: 1, active: true }),
+          where: expect.objectContaining({ user_id: 1 }),
         }),
       );
       expect(prisma.income.findMany).toHaveBeenCalledWith(
@@ -512,15 +512,314 @@ describe('SalesByEmployeeService', () => {
       expect(incomeWhere.user_id).toBeUndefined();
     });
 
-    /* Un empleado inactivo ya no tiene turno: sus días quedan sin dueño. */
+    /*
+     * Un empleado inactivo ya no tiene turno: sus días quedan sin dueño. Antes
+     * esto se comprobaba mirando el `where` del query; ahora los inactivos sí se
+     * traen —para poder devolver el renglón de uno que se pidió por id— así que
+     * se verifica el comportamiento, que es lo que de verdad importa.
+     */
     it('no atribuye ventas a empleados inactivos', async () => {
-      await service.getSalesByEmployee(ctx, { year: 2026, month: 8 });
+      prisma.employee.findMany.mockResolvedValue([
+        { id: 1, name: 'Luis', sales_days: [1, 2, 3, 4, 5], active: false },
+      ]);
+      prisma.income.findMany.mockResolvedValue([
+        income(1, '2026-08-03T18:00:00Z', 500), // lunes, día de Luis
+      ]);
 
-      expect(prisma.employee.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ active: true }),
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+      });
+
+      expect(row(report, 'unassigned')).toMatchObject({
+        net_sales: 500,
+        sales_count: 1,
+      });
+      expect(row(report, 'Luis')).toBeUndefined();
+    });
+  });
+
+  describe('periodo por rango', () => {
+    it('acota a las fechas pedidas', async () => {
+      await service.getSalesByEmployee(ctx, {
+        start_date: '2026-08-10',
+        end_date: '2026-08-16',
+      });
+
+      const where = prisma.income.findMany.mock.calls[0][0].where;
+      expect(where.date.gte.toISOString()).toBe('2026-08-10T06:00:00.000Z');
+      expect(where.date.lte.toISOString()).toBe('2026-08-17T05:59:59.999Z');
+    });
+
+    it('rechaza mezclar mes y rango', async () => {
+      await expect(
+        service.getSalesByEmployee(ctx, {
+          year: 2026,
+          month: 8,
+          start_date: '2026-08-01',
+          end_date: '2026-08-31',
         }),
-      );
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rechaza medio rango', async () => {
+      await expect(
+        service.getSalesByEmployee(ctx, { start_date: '2026-08-01' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rechaza un rango invertido', async () => {
+      await expect(
+        service.getSalesByEmployee(ctx, {
+          start_date: '2026-08-16',
+          end_date: '2026-08-10',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    /*
+     * Deducir el mes de `start_date` haría que un 15-ene a 15-feb se anunciara
+     * como enero: una respuesta equivocada dicha con seguridad.
+     */
+    it('sólo declara mes cuando el rango es exactamente ese mes', async () => {
+      const mes = await service.getSalesByEmployee(ctx, {
+        start_date: '2026-08-01',
+        end_date: '2026-08-31',
+      });
+      expect(mes.period).toMatchObject({ year: 2026, month: 8 });
+
+      const aCaballo = await service.getSalesByEmployee(ctx, {
+        start_date: '2026-01-15',
+        end_date: '2026-02-15',
+      });
+      expect(aCaballo.period).toMatchObject({ year: null, month: null });
+      expect(aCaballo.period.start_date).toBeDefined();
+    });
+
+    it('declara el mes cuando se pide por year y month', async () => {
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+      });
+
+      expect(report.period).toMatchObject({ year: 2026, month: 8 });
+    });
+  });
+
+  describe('filtro de empleados', () => {
+    const ventas = () => {
+      prisma.employee.findMany.mockResolvedValue([LUIS, FELIX]);
+      prisma.income.findMany.mockResolvedValue([
+        income(1, '2026-08-03T18:00:00Z', 1000), // lunes → Luis
+        income(2, '2026-08-08T18:00:00Z', 400), // sábado → Félix
+      ]);
+    };
+
+    it('devuelve sólo el empleado pedido', async () => {
+      ventas();
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+        employee_ids: [1],
+      });
+
+      expect(report.rows).toHaveLength(1);
+      expect(report.rows[0]).toMatchObject({ employee_id: 1, net_sales: 1000 });
+    });
+
+    it('devuelve varios cuando se piden varios', async () => {
+      ventas();
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+        employee_ids: [1, 2],
+      });
+
+      expect(report.rows.map((r: any) => r.employee_id).sort()).toEqual([1, 2]);
+    });
+
+    it('omite unassigned al filtrar, y lo devuelve si se pide', async () => {
+      ventas();
+
+      const sinPedirlo = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+        employee_ids: [1],
+      });
+      expect(row(sinPedirlo, 'unassigned')).toBeUndefined();
+
+      const pidiendolo = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+        employee_ids: [1],
+        include_unassigned: true,
+      });
+      expect(row(pidiendolo, 'unassigned')).toBeDefined();
+    });
+
+    it('sin filtro sigue trayendo a todos más unassigned', async () => {
+      ventas();
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+      });
+
+      expect(row(report, 'Luis')).toBeDefined();
+      expect(row(report, 'Félix')).toBeDefined();
+      expect(row(report, 'unassigned')).toBeDefined();
+    });
+
+    it('rechaza un id que no es de un empleado propio', async () => {
+      ventas();
+
+      await expect(
+        service.getSalesByEmployee(ctx, {
+          year: 2026,
+          month: 8,
+          employee_ids: [99],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    /*
+     * El filtro se aplica después de repartir. Si acotara el query de ingresos,
+     * los días de los no seleccionados caerían en `unassigned` y la cifra de
+     * quien se pidió cambiaría según a quién más se hubiera pedido.
+     */
+    it('filtrar no reasigna ventas', async () => {
+      ventas();
+      const filtrado = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+        employee_ids: [1],
+      });
+
+      ventas();
+      const completo = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+      });
+
+      expect(filtrado.rows[0]).toEqual(row(completo, 'Luis'));
+    });
+  });
+
+  describe('totales del filtro y del periodo', () => {
+    const ventas = () => {
+      prisma.employee.findMany.mockResolvedValue([LUIS, FELIX]);
+      prisma.income.findMany.mockResolvedValue([
+        income(1, '2026-08-03T18:00:00Z', 1000), // lunes → Luis
+        income(2, '2026-08-08T18:00:00Z', 400), // sábado → Félix
+      ]);
+    };
+
+    it('sin filtro los dos bloques coinciden', async () => {
+      ventas();
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+      });
+
+      expect(report.totals).toEqual(report.period_totals);
+      expect(report.period_totals.net_sales).toBe(1400);
+    });
+
+    it('con filtro los totales se acotan pero el periodo queda entero', async () => {
+      ventas();
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+        employee_ids: [1],
+      });
+
+      expect(report.totals.net_sales).toBe(1000);
+      expect(report.totals.sales_count).toBe(1);
+      expect(report.period_totals.net_sales).toBe(1400);
+      expect(report.period_totals.sales_count).toBe(2);
+    });
+
+    it('el total del periodo cuenta unassigned aunque no se devuelva', async () => {
+      prisma.employee.findMany.mockResolvedValue([LUIS]);
+      prisma.income.findMany.mockResolvedValue([
+        income(1, '2026-08-03T18:00:00Z', 1000), // lunes → Luis
+        income(2, '2026-08-08T18:00:00Z', 700), // sábado → nadie
+      ]);
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+        employee_ids: [1],
+      });
+
+      expect(row(report, 'unassigned')).toBeUndefined();
+      expect(report.totals.net_sales).toBe(1000);
+      expect(report.period_totals.net_sales).toBe(1700);
+    });
+  });
+
+  describe('empleados inactivos', () => {
+    /*
+     * Un inactivo no tiene días, así que su renglón sale en ceros. Sin la
+     * bandera ese cero se lee como «no vendió nada», cuando lo cierto es que sus
+     * días ahora son de alguien más.
+     */
+    it('devuelve al inactivo que se pidió, marcado y en ceros', async () => {
+      prisma.employee.findMany.mockResolvedValue([
+        { id: 1, name: 'Luis', sales_days: [1, 2, 3, 4, 5], active: true },
+        { id: 3, name: 'Ana', sales_days: [], active: false },
+      ]);
+      prisma.income.findMany.mockResolvedValue([
+        income(1, '2026-08-03T18:00:00Z', 1000), // lunes → Luis
+      ]);
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+        employee_ids: [3],
+      });
+
+      expect(report.rows).toHaveLength(1);
+      expect(report.rows[0]).toMatchObject({
+        employee_id: 3,
+        active: false,
+        net_sales: 0,
+        sales_count: 0,
+      });
+    });
+
+    it('sus días siguen contando para quien los tiene hoy', async () => {
+      prisma.employee.findMany.mockResolvedValue([
+        { id: 1, name: 'Luis', sales_days: [1, 2, 3, 4, 5], active: true },
+        { id: 3, name: 'Ana', sales_days: [1], active: false },
+      ]);
+      prisma.income.findMany.mockResolvedValue([
+        income(1, '2026-08-03T18:00:00Z', 1000), // lunes
+      ]);
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+      });
+
+      expect(row(report, 'Luis')).toMatchObject({ net_sales: 1000 });
+      expect(report.period_totals.net_sales).toBe(1000);
+    });
+
+    it('marca como activos a los que lo están', async () => {
+      prisma.employee.findMany.mockResolvedValue([LUIS, FELIX]);
+
+      const report = await service.getSalesByEmployee(ctx, {
+        year: 2026,
+        month: 8,
+      });
+
+      expect(row(report, 'Luis').active).toBe(true);
+      expect(row(report, 'unassigned').active).toBe(true);
     });
   });
 });

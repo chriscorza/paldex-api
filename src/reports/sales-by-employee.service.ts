@@ -9,6 +9,9 @@ import {
   monthRangeInZone,
   reportsTimeZone,
   weekdayInZone,
+  startOfDayInZone,
+  endOfDayInZone,
+  dateKeyInZone,
 } from '../common/timezone';
 import { SalesByEmployeeQueryDto } from './dto/sales-by-employee-query.dto';
 import {
@@ -25,6 +28,7 @@ type Decimal = Prisma.Decimal;
 interface Bucket {
   employee_id: number | null;
   employee_name: string;
+  active: boolean;
   sales_days: number[];
   net_sales: Decimal;
   gross_sales: Decimal;
@@ -62,9 +66,15 @@ export class SalesByEmployeeService {
     const ownerFilter = buildOwnerFilter(ctx);
 
     const [employees, incomes] = await Promise.all([
+      /*
+       * Se traen también los inactivos. No reciben días —eso sigue siendo sólo
+       * de los activos— pero hay que poder devolver el renglón de uno que se
+       * pidió por id y marcarlo `active: false`, en vez de que desaparezca y su
+       * cero se confunda con «no vendió nada».
+       */
       this.prisma.employee.findMany({
-        where: { ...ownerFilter, active: true },
-        select: { id: true, name: true, sales_days: true },
+        where: ownerFilter,
+        select: { id: true, name: true, sales_days: true, active: true },
         orderBy: { name: 'asc' },
       }),
       /*
@@ -95,26 +105,39 @@ export class SalesByEmployeeService {
       }),
     ]);
 
+    this.validateEmployeeIds(query.employee_ids, employees);
+
     const buckets = new Map<number | null, Bucket>();
     const byDay = new Map<number, number>();
+    const requested = query.employee_ids
+      ? new Set(query.employee_ids)
+      : undefined;
 
     for (const employee of employees) {
-      const days = parseSalesDays(employee.sales_days);
-      if (days.length === 0) continue;
+      /*
+       * Un inactivo no tiene días —`sales_days` se le vacía al desactivarlo— y
+       * un activo sin días asignados tampoco aporta renglón, salvo que lo hayan
+       * pedido explícitamente: ahí sí se devuelve, en ceros y con su bandera,
+       * porque «pedí a esta persona y no aparece» es peor que un cero explicado.
+       */
+      const days = employee.active ? parseSalesDays(employee.sales_days) : [];
+      if (days.length === 0 && !requested?.has(employee.id)) continue;
 
       buckets.set(
         employee.id,
-        this.emptyBucket(employee.id, employee.name, days),
+        this.emptyBucket(employee.id, employee.name, days, employee.active),
       );
       for (const day of days) byDay.set(day, employee.id);
     }
 
     /*
-     * `unassigned` siempre está, aunque valga cero: es lo que hace comprobable
-     * el reporte. Sin él, las ventas de un día sin dueño desaparecerían del
-     * total sin dejar rastro en vez de quedar a la vista.
+     * `unassigned` siempre se calcula, aunque valga cero: es lo que hace
+     * comprobable el reporte. Sin él, las ventas de un día sin dueño
+     * desaparecerían del total sin dejar rastro en vez de quedar a la vista.
+     * Si se filtró y no lo pidieron, se quita al proyectar —no aquí—, para que
+     * `period_totals` lo siga contando.
      */
-    buckets.set(null, this.emptyBucket(null, UNASSIGNED_ROW_NAME, []));
+    buckets.set(null, this.emptyBucket(null, UNASSIGNED_ROW_NAME, [], true));
 
     for (const income of incomes) {
       const weekday = weekdayInZone(income.date, timeZone);
@@ -142,7 +165,53 @@ export class SalesByEmployeeService {
       if (income.cogs.length > 0) bucket.sales_with_cost += 1;
     }
 
-    const rows = [...buckets.values()];
+    const allBuckets = [...buckets.values()];
+
+    /*
+     * El filtro se aplica *después* de repartir las ventas, nunca acotando el
+     * query de ingresos: para saber qué cae en `unassigned` hay que atribuir
+     * contra todos los empleados. Filtrando antes, los días de los no
+     * seleccionados se irían a `unassigned` y la cifra de la persona que se pidió
+     * cambiaría según a quién más se hubiera pedido.
+     */
+    const visible = requested
+      ? allBuckets.filter((row) =>
+          row.employee_id === null
+            ? query.include_unassigned === true
+            : requested.has(row.employee_id),
+        )
+      : allBuckets;
+
+    return new SalesByEmployeeReportEntity({
+      period: new SalesByEmployeePeriodEntity({
+        year,
+        month,
+        start_date: startDate,
+        end_date: endDate,
+      }),
+      rows: visible.map((row) => this.projectRow(row)),
+      totals: this.projectTotals(visible),
+      period_totals: this.projectTotals(allBuckets),
+    });
+  }
+
+  private projectRow(row: Bucket): SalesByEmployeeRowEntity {
+    return new SalesByEmployeeRowEntity({
+      employee_id: row.employee_id,
+      employee_name: row.employee_name,
+      active: row.active,
+      sales_days: row.sales_days,
+      net_sales: toMoneyNumber(row.net_sales) ?? 0,
+      gross_sales: toMoneyNumber(row.gross_sales) ?? 0,
+      sales_count: row.sales_count,
+      cogs: toMoneyNumber(row.cogs) ?? 0,
+      gross_profit: toMoneyNumber(row.net_sales.minus(row.cogs)) ?? 0,
+      sales_with_cost: row.sales_with_cost,
+      cost_data_coverage: percentage(row.sales_with_cost, row.sales_count),
+    });
+  }
+
+  private projectTotals(rows: Bucket[]): SalesByEmployeeTotalsEntity {
     const totals = rows.reduce(
       (acc, row) => ({
         net_sales: acc.net_sales.add(row.net_sales),
@@ -160,50 +229,49 @@ export class SalesByEmployeeService {
       },
     );
 
-    return new SalesByEmployeeReportEntity({
-      period: new SalesByEmployeePeriodEntity({
-        year,
-        month,
-        start_date: startDate,
-        end_date: endDate,
-      }),
-      rows: rows.map(
-        (row) =>
-          new SalesByEmployeeRowEntity({
-            employee_id: row.employee_id,
-            employee_name: row.employee_name,
-            sales_days: row.sales_days,
-            net_sales: toMoneyNumber(row.net_sales) ?? 0,
-            gross_sales: toMoneyNumber(row.gross_sales) ?? 0,
-            sales_count: row.sales_count,
-            cogs: toMoneyNumber(row.cogs) ?? 0,
-            gross_profit: toMoneyNumber(row.net_sales.minus(row.cogs)) ?? 0,
-            sales_with_cost: row.sales_with_cost,
-            cost_data_coverage: percentage(
-              row.sales_with_cost,
-              row.sales_count,
-            ),
-          }),
+    return new SalesByEmployeeTotalsEntity({
+      net_sales: toMoneyNumber(totals.net_sales) ?? 0,
+      gross_sales: toMoneyNumber(totals.gross_sales) ?? 0,
+      sales_count: totals.sales_count,
+      cogs: toMoneyNumber(totals.cogs) ?? 0,
+      gross_profit: toMoneyNumber(totals.net_sales.minus(totals.cogs)) ?? 0,
+      sales_with_cost: totals.sales_with_cost,
+      cost_data_coverage: percentage(
+        totals.sales_with_cost,
+        totals.sales_count,
       ),
-      totals: new SalesByEmployeeTotalsEntity({
-        net_sales: toMoneyNumber(totals.net_sales) ?? 0,
-        gross_sales: toMoneyNumber(totals.gross_sales) ?? 0,
-        sales_count: totals.sales_count,
-        cogs: toMoneyNumber(totals.cogs) ?? 0,
-        gross_profit: toMoneyNumber(totals.net_sales.minus(totals.cogs)) ?? 0,
-        sales_with_cost: totals.sales_with_cost,
-        cost_data_coverage: percentage(
-          totals.sales_with_cost,
-          totals.sales_count,
-        ),
-      }),
     });
   }
 
-  private emptyBucket(id: number | null, name: string, days: number[]): Bucket {
+  /*
+   * Un id que no sea de un empleado propio es un typo o un id viejo, no un dato
+   * del negocio: devolverlo en ceros lo haría pasar por «esa persona no vendió».
+   */
+  private validateEmployeeIds(
+    ids: number[] | undefined,
+    employees: { id: number }[],
+  ): void {
+    if (!ids || ids.length === 0) return;
+
+    const known = new Set(employees.map((e) => e.id));
+    const unknown = ids.filter((id) => !known.has(id));
+    if (unknown.length > 0) {
+      throw new BadRequestException(
+        `Unknown employee_ids: ${unknown.join(', ')}`,
+      );
+    }
+  }
+
+  private emptyBucket(
+    id: number | null,
+    name: string,
+    days: number[],
+    active: boolean,
+  ): Bucket {
     return {
       employee_id: id,
       employee_name: name,
+      active,
       sales_days: days,
       net_sales: new Decimal(0),
       gross_sales: new Decimal(0),
@@ -214,18 +282,46 @@ export class SalesByEmployeeService {
   }
 
   /*
-   * Sin parámetros, el mes en curso *de la tienda*: con la zona del servidor
-   * —UTC en el contenedor— el día 1 antes de las 06:00 el reporte ya habría
-   * saltado al mes siguiente mientras el negocio sigue cerrando el anterior.
+   * `year`+`month` o `start_date`+`end_date`, nunca los dos —el mismo trato que
+   * en `GET /reports/monthly`—. Sin nada, el mes en curso *de la tienda*: con la
+   * zona del servidor —UTC en el contenedor— el día 1 antes de las 06:00 el
+   * reporte ya habría saltado al mes siguiente mientras el negocio sigue
+   * cerrando el anterior.
    */
-  private resolvePeriod(query: SalesByEmployeeQueryDto) {
+  private resolvePeriod(query: SalesByEmployeeQueryDto): {
+    year: number | null;
+    month: number | null;
+    startDate: Date;
+    endDate: Date;
+  } {
     const hasYear = query.year !== undefined;
     const hasMonth = query.month !== undefined;
+    const hasStart = query.start_date !== undefined;
+    const hasEnd = query.end_date !== undefined;
 
+    if ((hasYear || hasMonth) && (hasStart || hasEnd)) {
+      throw new BadRequestException(
+        'Use either year+month or start_date+end_date, not both',
+      );
+    }
     if (hasYear !== hasMonth) {
       throw new BadRequestException(
         'Provide both year and month, or neither for the current month',
       );
+    }
+    if (hasStart !== hasEnd) {
+      throw new BadRequestException(
+        'Provide both start_date and end_date, or neither',
+      );
+    }
+
+    if (hasStart) {
+      const startDate = startOfDayInZone(query.start_date!);
+      const endDate = endOfDayInZone(query.end_date!);
+      if (endDate < startDate) {
+        throw new BadRequestException('end_date must not precede start_date');
+      }
+      return { ...this.declaredMonth(startDate, endDate), startDate, endDate };
     }
 
     const { year, month } = hasYear
@@ -233,5 +329,27 @@ export class SalesByEmployeeService {
       : currentMonthInZone();
 
     return { year, month, ...monthRangeInZone(year, month) };
+  }
+
+  /*
+   * Un rango sólo declara mes si lo cubre exactamente. Deducirlo de
+   * `start_date` haría que un 15-ene a 15-feb se anunciara como enero: una
+   * respuesta equivocada dicha con seguridad, que es peor que no decir nada.
+   */
+  private declaredMonth(
+    startDate: Date,
+    endDate: Date,
+  ): { year: number | null; month: number | null } {
+    const timeZone = reportsTimeZone();
+    const [year, month] = dateKeyInZone(startDate, timeZone)
+      .split('-')
+      .map(Number);
+    const candidate = monthRangeInZone(year, month, timeZone);
+
+    const exact =
+      candidate.startDate.getTime() === startDate.getTime() &&
+      candidate.endDate.getTime() === endDate.getTime();
+
+    return exact ? { year, month } : { year: null, month: null };
   }
 }

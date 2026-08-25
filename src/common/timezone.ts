@@ -182,6 +182,85 @@ export function weekdayInZone(
   return ISO_WEEKDAYS[short];
 }
 
+/*
+ * A qué día del calendario pertenece esa venta para la tienda: `2026-08-05`.
+ *
+ * No se agrupa con SQL, y son dos motivos distintos —cualquiera de los dos basta
+ * para dar un reporte mal—:
+ *
+ * 1. `DATE(date)` usa la zona del servidor, UTC dentro del contenedor. Una venta
+ *    de las 19:00 del 5 en CDMX ya es el 6 en UTC, así que toda la tarde-noche
+ *    —la de más venta— se archivaría en el día siguiente.
+ * 2. `CONVERT_TZ` arregla lo anterior sólo si MySQL tiene cargadas las tablas de
+ *    zonas horarias, y la imagen `mysql:8.4` no las trae. Sin ellas devuelve
+ *    NULL en silencio: el reporte entero sale en ceros y parece un dato real.
+ *
+ * `Intl` no depende de cómo se aprovisionó la base.
+ */
+export function dateKeyInZone(
+  instant: Date,
+  timeZone: string = reportsTimeZone(),
+): string {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const parts: Record<string, string> = {};
+  for (const part of formatter.formatToParts(instant)) {
+    parts[part.type] = part.value;
+  }
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+/*
+ * Todos los días del calendario entre dos instantes, en la zona del negocio.
+ *
+ * Sirve para que un día sin ventas salga en cero en vez de faltar: sin la lista
+ * completa no se distingue «no vendió nada» de «no hay dato», y llevan a
+ * conclusiones opuestas.
+ *
+ * Se avanza sumando días de calendario sobre `Date.UTC` en vez de sumar 24 h a
+ * un instante: donde hay horario de verano un día local dura 23 o 25 horas, y
+ * sumando horas se repite o se salta una fecha dos veces al año. Aquí sólo se
+ * generan claves `YYYY-MM-DD`, así que la aritmética en UTC no interviene en la
+ * zona para nada.
+ */
+export function eachDateKeyInZone(
+  startInstant: Date,
+  endInstant: Date,
+  timeZone: string = reportsTimeZone(),
+): string[] {
+  const endKey = dateKeyInZone(endInstant, timeZone);
+  const [year, month, day] = parseDayParts(
+    dateKeyInZone(startInstant, timeZone),
+  );
+
+  const keys: string[] = [];
+  const cursor = new Date(Date.UTC(year, month - 1, day));
+
+  /*
+   * Comparación lexicográfica: `YYYY-MM-DD` con ceros a la izquierda ordena
+   * igual que cronológicamente.
+   */
+  for (;;) {
+    const key = [
+      String(cursor.getUTCFullYear()).padStart(4, '0'),
+      String(cursor.getUTCMonth() + 1).padStart(2, '0'),
+      String(cursor.getUTCDate()).padStart(2, '0'),
+    ].join('-');
+
+    if (key > endKey) break;
+    keys.push(key);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return keys;
+}
+
 export function monthRangeInZone(
   year: number,
   month: number,

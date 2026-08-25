@@ -9,6 +9,7 @@ import { ShopifyProfitabilityService } from './shopify-profitability.service';
 import { ComparisonService } from './comparison.service';
 import { SalesByEmployeeService } from './sales-by-employee.service';
 import { InventoryCostService } from './inventory-cost.service';
+import { DailySalesService } from './daily-sales.service';
 
 @Module({
   imports: [PrismaModule, ShopifyModule, InventoryModule],
@@ -20,6 +21,7 @@ import { InventoryCostService } from './inventory-cost.service';
     ComparisonService,
     SalesByEmployeeService,
     InventoryCostService,
+    DailySalesService,
   ],
   exports: [
     ReportsAggregationService,
@@ -28,6 +30,7 @@ import { InventoryCostService } from './inventory-cost.service';
     ComparisonService,
     SalesByEmployeeService,
     InventoryCostService,
+    DailySalesService,
   ],
 })
 export class ReportsModule {}

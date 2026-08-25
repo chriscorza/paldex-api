@@ -1,6 +1,6 @@
 {
   "name": "partner-chores-api",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "",
   "author": "",
   "private": true,
@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@nestjs/common": "^11.1.28",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.28",
@@ -38,7 +39,8 @@
     "prisma": "^7.9.1",
     "react-i18next": "^17.0.11",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
