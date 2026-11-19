@@ -30,6 +30,14 @@ import {
 export class PayrollController {
   constructor(private readonly service: PayrollService) {}
 
+  /*
+   * Falla cerrado: sin `permissionScope` (guard roto) cae en OWN. `ownerUserId`
+   * no se rellena en REST; sólo las llaves MCP lo traen.
+   */
+  private ctxOf(user: { id: number }, request: any): OwnershipContext {
+    return { userId: user.id, scope: request.permissionScope || 'OWN' };
+  }
+
   @Post('generate')
   @RequirePermissions('payroll:create')
   generate(
@@ -37,10 +45,7 @@ export class PayrollController {
     @Req() request: any,
     @Body() dto: GeneratePayrollDto,
   ) {
-    const ctx: OwnershipContext = {
-      userId: user.id,
-      scope: request.permissionScope || 'OWN',
-    };
+    const ctx = this.ctxOf(user, request);
     return this.service.generate(ctx, dto);
   }
 
@@ -51,10 +56,7 @@ export class PayrollController {
     @Req() request: any,
     @Body() dto: CreatePayrollPaymentDto,
   ) {
-    const ctx: OwnershipContext = {
-      userId: user.id,
-      scope: request.permissionScope || 'OWN',
-    };
+    const ctx = this.ctxOf(user, request);
     return this.service.createManual(ctx, dto);
   }
 
@@ -64,36 +66,48 @@ export class PayrollController {
     @Req() request: any,
     @Query() filters: FilterPayrollDto,
   ) {
-    const ctx: OwnershipContext = {
-      userId: user.id,
-      scope: request.permissionScope || 'OWN',
-    };
+    const ctx = this.ctxOf(user, request);
     return this.service.findAll(ctx, filters);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.service.findOne(id);
+  findOne(
+    @CurrentUser() user: { id: number },
+    @Req() request: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.service.findOne(this.ctxOf(user, request), id);
   }
 
   @Patch(':id')
   @RequirePermissions('payroll:update')
   update(
+    @CurrentUser() user: { id: number },
+    @Req() request: any,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdatePayrollPaymentDto,
   ) {
-    return this.service.update(id, dto);
+    return this.service.update(this.ctxOf(user, request), id, dto);
   }
 
   @Post(':id/pay')
   @RequirePermissions('payroll:update')
-  pay(@Param('id', ParseIntPipe) id: number, @Body() dto: PayPayrollDto) {
-    return this.service.pay(id, dto);
+  pay(
+    @CurrentUser() user: { id: number },
+    @Req() request: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: PayPayrollDto,
+  ) {
+    return this.service.pay(this.ctxOf(user, request), id, dto);
   }
 
   @Delete(':id')
   @RequirePermissions('payroll:delete')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.service.remove(id);
+  remove(
+    @CurrentUser() user: { id: number },
+    @Req() request: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.service.remove(this.ctxOf(user, request), id);
   }
 }

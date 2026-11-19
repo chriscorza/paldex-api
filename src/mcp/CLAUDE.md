@@ -34,6 +34,8 @@ a 400 pointing to `POST /payroll`; see `src/payroll/CLAUDE.md`.
 | `payroll_create` | `POST /payroll` | `payroll:create` | employee must belong to the key's owner; always `PENDING` |
 | `payroll_pay` | `POST /payroll/:id/pay` | `payroll:update` | payment must belong to the key's owner; `paid_at` and `account_id` required |
 
+`payroll_pay` calls `PayrollService.pay(ctx, id, dto)`, the same method `POST /payroll/:id/pay` uses: REST and MCP now share one ownership path (a foreign id is `404`, the account must belong to the effective owner).
+
 Keep this table in sync with `src/mcp/mcp-tools.service.ts` — a hand-written tool list can drift
 from the REST contract silently otherwise (see design.md "Risks").
 

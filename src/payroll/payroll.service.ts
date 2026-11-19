@@ -20,13 +20,12 @@ import {
   OwnershipContext,
   buildOwnerFilter,
   effectiveOwnerId,
-  buildWriteTargetFilter,
 } from '../common/ownership';
 import { calculatePayDates } from './payroll-schedule';
 import { Prisma as PrismaClient } from '@prisma/client';
 const Decimal = PrismaClient.Decimal;
 type Decimal = PrismaClient.Decimal;
-import { PayrollStatus } from '@prisma/client';
+import { PayrollStatus, Prisma } from '@prisma/client';
 
 const VALID_TRANSITIONS: Record<PayrollStatus, PayrollStatus[]> = {
   PENDING: ['PAID', 'CANCELLED', 'SKIPPED'],
@@ -35,6 +34,16 @@ const VALID_TRANSITIONS: Record<PayrollStatus, PayrollStatus[]> = {
   CANCELLED: [],
   SKIPPED: [],
 };
+
+/*
+ * A qué libros puede apuntar una ESCRITURA de nómina (empleado de una alta o
+ * generación, cuenta de un pago): siempre al propietario efectivo, también con
+ * scope ANY. `buildWriteTargetFilter` no sirve aquí: con ANY sin delegar
+ * devuelve `{}` y dejaría generar o pagar contra libros ajenos.
+ */
+function ownerBooks(ctx: OwnershipContext): { user_id: number } {
+  return { user_id: effectiveOwnerId(ctx) };
+}
 
 @Injectable()
 export class PayrollService {
@@ -49,7 +58,7 @@ export class PayrollService {
        * baja sí queda fuera: nada lo acotaría.
        */
       where: {
-        ...buildOwnerFilter(ctx),
+        ...ownerBooks(ctx),
         OR: [{ active: true }, { ended_at: { not: null } }],
       },
     });
@@ -127,7 +136,7 @@ export class PayrollService {
      * tenga scope ANY: una prima contra el empleado de otro dueño se rechaza.
      */
     const employee = await this.prisma.employee.findFirst({
-      where: { id: dto.employee_id, ...buildWriteTargetFilter(ctx) },
+      where: { id: dto.employee_id, ...ownerBooks(ctx) },
     });
     if (!employee) throw new NotFoundException('Employee not found');
     if (dto.account_id !== undefined && dto.account_id !== null) {
@@ -172,9 +181,7 @@ export class PayrollService {
       where.status = filters.status;
     }
 
-    if (ctx.scope === 'OWN') {
-      where.employee = { user_id: effectiveOwnerId(ctx) };
-    }
+    where.employee = buildOwnerFilter(ctx);
 
     const dateField = filters.date_field || 'scheduled_pay_date';
     if (filters.start_date) {
@@ -213,20 +220,45 @@ export class PayrollService {
     };
   }
 
-  async findOne(id: number) {
-    const payment = await this.prisma.payrollPayment.findUnique({
-      where: { id },
-      select: PAYROLL_PUBLIC_SELECT,
+  /*
+   * Resuelve un pago por id a través del propietario del empleado (el pago no
+   * tiene `user_id`). Uno ajeno es indistinguible de uno inexistente: 404. Todo
+   * método por id pasa por aquí ANTES de mirar el estado, para que un 409 no
+   * delate la existencia de un pago de otro.
+   */
+  private async findOwnedPayment<T extends Prisma.PayrollPaymentFindFirstArgs>(
+    ctx: OwnershipContext,
+    id: number,
+    extra?: T,
+  ) {
+    const payment = await this.prisma.payrollPayment.findFirst({
+      ...(extra as object),
+      where: { id, employee: buildOwnerFilter(ctx) },
     });
     if (!payment) throw new NotFoundException('Payroll payment not found');
+    return payment as any;
+  }
+
+  async findOne(ctx: OwnershipContext, id: number) {
+    const payment = await this.findOwnedPayment(ctx, id, {
+      select: PAYROLL_PUBLIC_SELECT,
+    });
     return new PayrollPaymentEntity(payment);
   }
 
-  async update(id: number, dto: UpdatePayrollPaymentDto) {
-    const existing = await this.prisma.payrollPayment.findUnique({
-      where: { id },
-    });
-    if (!existing) throw new NotFoundException('Payroll payment not found');
+  async update(
+    ctx: OwnershipContext,
+    id: number,
+    dto: UpdatePayrollPaymentDto,
+  ) {
+    const existing = await this.findOwnedPayment(ctx, id);
+
+    /* Pagar mueve dinero y exige cuenta y fecha: sólo por `/pay`. */
+    if (dto.status === 'PAID') {
+      throw new BadRequestException(
+        'Use POST /payroll/:id/pay to mark a payroll payment as paid',
+      );
+    }
 
     if (existing.status === 'PAID') {
       throw new ConflictException('Cannot edit a paid payroll payment');
@@ -259,26 +291,14 @@ export class PayrollService {
   }
 
   /*
-   * `ctx` es opcional para no cambiar el comportamiento de REST; las tools MCP
-   * siempre lo pasan, y entonces el pago debe ser de un empleado del propietario
-   * efectivo y la cuenta de sus libros.
+   * El pago puede ser de otro propietario sólo con scope ANY; la cuenta
+   * (explícita, la del pago o la predeterminada del empleado) debe ser SIEMPRE
+   * del propietario efectivo.
    */
-  async pay(id: number, dto: PayPayrollDto, ctx?: OwnershipContext) {
-    const existing = await this.prisma.payrollPayment.findUnique({
-      where: { id },
+  async pay(ctx: OwnershipContext, id: number, dto: PayPayrollDto) {
+    const existing = await this.findOwnedPayment(ctx, id, {
       include: { employee: true },
     });
-    if (!existing) throw new NotFoundException('Payroll payment not found');
-
-    if (ctx) {
-      const target = buildWriteTargetFilter(ctx);
-      if (
-        target.user_id !== undefined &&
-        existing.employee.user_id !== target.user_id
-      ) {
-        throw new NotFoundException('Payroll payment not found');
-      }
-    }
 
     if (existing.status === 'PAID') {
       throw new ConflictException('Payroll payment is already paid');
@@ -292,7 +312,7 @@ export class PayrollService {
       throw new BadRequestException('No payment account available');
     }
 
-    if (ctx) await this.assertAccountInOwnerBooks(ctx, accountId);
+    await this.assertAccountInOwnerBooks(ctx, accountId);
 
     const account = await this.prisma.account.findUnique({
       where: { id: accountId },
@@ -319,11 +339,8 @@ export class PayrollService {
     return new PayrollPaymentEntity(payment);
   }
 
-  async remove(id: number) {
-    const existing = await this.prisma.payrollPayment.findUnique({
-      where: { id },
-    });
-    if (!existing) throw new NotFoundException('Payroll payment not found');
+  async remove(ctx: OwnershipContext, id: number) {
+    const existing = await this.findOwnedPayment(ctx, id);
 
     if (existing.status === 'PAID') {
       throw new ConflictException('Cannot delete a paid payroll payment');
@@ -337,7 +354,7 @@ export class PayrollService {
     accountId: number,
   ): Promise<void> {
     const account = await this.prisma.account.findFirst({
-      where: { id: accountId, ...buildWriteTargetFilter(ctx) },
+      where: { id: accountId, ...ownerBooks(ctx) },
     });
     if (!account) {
       throw new BadRequestException(

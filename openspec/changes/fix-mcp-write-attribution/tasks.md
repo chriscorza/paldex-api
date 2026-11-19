@@ -48,3 +48,4 @@
 - 6.4 / 6.5 are production operations (rebind the agent's key, verify) and are left for the owner; not run from code.
 - `PATCH /mcp-keys/:id` needs the new permission `mcp_key:update` (added to the catalog; grant it to the admin role).
 - Finding, not fixed (REST behavior change): `PayrollController.findOne/update/pay/remove` take no ownership context, so any holder of the permission can touch another owner's payment by id. MCP tools pass the context.
+- Resolved by `fix-payroll-rest-ownership`: the REST gap above is closed (`ctx` required on `findOne/update/pay/remove`, foreign id → 404, writes pinned to the effective owner's books).

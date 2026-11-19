@@ -23,6 +23,21 @@ decorator) so `expense_create` over MCP is covered too.
 - Ownership flows through `employee.user_id` (`PayrollPayment` has no `user_id`). MCP writes pass the
   context with the key's owner: `createManual` and `pay` require the employee (and the account) to
   belong to the **effective owner**, even under `ANY` scope (`buildWriteTargetFilter`).
-- Known gap (REST, not changed): `findOne/update/pay/remove` take no ownership context, so any holder of
-  the permission can act on another owner's payment by id. Only the MCP path (`pay(id, dto, ctx)`) checks.
+- **Ownership by id (REST and MCP share one path).** Every by-id method is `(ctx, id, ...)` with a
+  required `ctx` and resolves the payment through `findOwnedPayment` → `findFirst({ where: { id,
+  employee: buildOwnerFilter(ctx) } })`. Another owner's id is a `404 Payroll payment not found`,
+  identical to a missing one, and ownership is checked **before** state (a `409` on a foreign PAID
+  payment would leak that it exists). `OWN` reaches only its owner's payments; `ANY` may read, edit,
+  pay and delete any existing payment.
+- **Writes point only at the effective owner's books, even under `ANY`.** `generate` (employees),
+  `createManual` (employee, account) and `pay` (account: explicit, the payment's, or the employee's
+  default) filter with `ownerBooks(ctx) = { user_id: effectiveOwnerId(ctx) }`. Do not swap in
+  `buildWriteTargetFilter`: under `ANY` without delegation it returns `{}` and would let a generate or
+  a payment hit other owners' books.
+- **`PATCH /payroll/:id` cannot set `status: PAID`** (400 pointing to `POST /payroll/:id/pay`, which
+  requires account and date); other transitions are unchanged. `UpdatePayrollPaymentDto` has no
+  `employee_id`/`account_id`; a test fails if they are added without validation.
+- `PayrollController.ctxOf` builds the context (`permissionScope || 'OWN'`, fail closed);
+  `payroll-rest-ownership.spec.ts` has a structural guard that fails if a handler lacks `@Req`/`@CurrentUser`
+  and uses a fake Prisma that evaluates nested `where` (the `matches` in `mcp-attribution.spec.ts` does not).
 - Payroll **taxes** are a different domain and have no MCP path.

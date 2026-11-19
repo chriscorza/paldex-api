@@ -586,9 +586,9 @@ describe('McpToolsService', () => {
         'payroll:update',
       );
       expect(payrollService.pay).toHaveBeenCalledWith(
+        { userId: 9, scope: 'OWN', ownerUserId: 1 },
         5,
         { paid_at: '2026-08-15', account_id: 2 },
-        { userId: 9, scope: 'OWN', ownerUserId: 1 },
       );
     });
 

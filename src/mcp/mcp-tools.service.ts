@@ -338,14 +338,10 @@ export class McpToolsService {
       },
       async (args) =>
         this.run(caller, 'payroll_pay', 'payroll:update', true, (ctx) =>
-          this.payrollService.pay(
-            args.payment_id,
-            {
-              paid_at: args.paid_at,
-              account_id: args.account_id,
-            } as PayPayrollDto,
-            ctx,
-          ),
+          this.payrollService.pay(ctx, args.payment_id, {
+            paid_at: args.paid_at,
+            account_id: args.account_id,
+          } as PayPayrollDto),
         ),
     );
 

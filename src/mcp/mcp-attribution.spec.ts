@@ -85,8 +85,14 @@ describe('MCP write attribution (fix-mcp-write-attribution)', () => {
         ),
       ),
       count: jest.fn(() => Promise.resolve(payments.length)),
-      findUnique: jest.fn(({ where }) => {
-        const p = payments.find((x) => x.id === where.id);
+      findFirst: jest.fn(({ where }) => {
+        const p = payments.find(
+          (x) =>
+            x.id === where.id &&
+            (!where.employee?.user_id ||
+              employees.find((e) => e.id === x.employee_id)?.user_id ===
+                where.employee.user_id),
+        );
         return Promise.resolve(
           p && {
             ...p,
