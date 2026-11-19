@@ -23,7 +23,7 @@
 
 - [x] 4.1 `ExpensesService.validateForeignKeys` resolves accounts, categories and taxes against `ownerUserId`.
 - [x] 4.2 Same for incomes, payables, receivables and recurring expenses (whichever the agent can write; at minimum every write tool that exists after `add-mcp-payroll-payments`).
-- [ ] 4.3 The payroll write tools validate `employee_id` against `ownerUserId` — a bonus against another owner's employee is refused.
+- [x] 4.3 The payroll write tools validate `employee_id` against `ownerUserId` — a bonus against another owner's employee is refused.
 
 ## 5. Tests
 

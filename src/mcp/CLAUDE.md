@@ -3,12 +3,24 @@
 The MCP surface an AI agent talks to. Transport, auth and the per-tool authorization plumbing came
 from `openspec/changes/add-mcp-server`; tools are added one change at a time after that.
 
-## Tools are read-only from here on
+## Write policy: only domains with an explicit agent write policy
 
-`expense_create` is the **only** write tool and it is a legacy exception — every tool added since
-is read-only, and no new one that creates, updates or deletes may be added
-(`openspec/changes/add-mcp-daily-sales`). The registry test in `mcp-tools.service.spec.ts` asserts
-this, so breaking the rule fails the build rather than passing review.
+A tool that creates, updates or deletes data is added **only together with a written agent write
+policy for its domain**: who may call it, under which permission, and which ownership target the
+written row gets (the key's `owner_user_id`). Two domains have one today:
+
+- **Expenses** — `expense_create` (`expense:create`).
+- **Payroll** — `payroll_create` (`payroll:create`), `payroll_pay` (`payroll:update`). Payroll
+  **taxes** (`TaxPaymentType.PAYROLL_TAX`) are *not* payroll for this purpose and stay unreachable.
+
+Every other domain is read-only. The registry test in `mcp-tools.service.spec.ts` enumerates every
+tool **and every write tool** explicitly, so adding one without touching the test fails the build.
+(History: `add-mcp-daily-sales` froze writes after `expense_create`; `add-mcp-payroll-payments`
+replaced "never again" with this policy.)
+
+**`PayrollPayment` is the only record of money paid to employees.** An expense whose category has
+`type = PAYROLL` is refused everywhere (`ExpensesService.create/update`, recurring templates) with
+a 400 pointing to `POST /payroll`; see `src/payroll/CLAUDE.md`.
 
 ## Tool ↔ REST pairing
 
@@ -18,6 +30,9 @@ this, so breaking the rule fails the build rather than passing review.
 | `sales_daily` | `GET /reports/sales-daily` | `report:read` | scope-aware (`OWN`/`ANY`) |
 | `sales_by_employee` | `GET /reports/sales-by-employee` | `report:read` | scope-aware (`OWN`/`ANY`) |
 | `expense_create` | `POST /expenses` | `expense:create` | attributes to the key's `owner_user_id` |
+| `payroll_list` | `GET /payroll` | `payroll:read` | scope-aware; `start_date`/`end_date` required |
+| `payroll_create` | `POST /payroll` | `payroll:create` | employee must belong to the key's owner; always `PENDING` |
+| `payroll_pay` | `POST /payroll/:id/pay` | `payroll:update` | payment must belong to the key's owner; `paid_at` and `account_id` required |
 
 Keep this table in sync with `src/mcp/mcp-tools.service.ts` — a hand-written tool list can drift
 from the REST contract silently otherwise (see design.md "Risks").
@@ -47,7 +62,7 @@ per-route. **Never register a tool that skips this call.**
 
 ## The denylist is structural, not a permission check
 
-Payroll, tax payments, user/role/permission management, Shopify connection credentials,
+Payroll **taxes**, tax payments, user/role/permission management, Shopify connection credentials,
 invitations, chart-of-accounts writes, monthly-close writes, and
 `POST /reports/shopify/recalculate-costs` have no tool in `mcp-tools.service.ts` — full stop. This
 is deliberate: granting the `ai_agent` role a broader permission (by mistake or otherwise) must

@@ -102,7 +102,6 @@ const SYSTEM_CATEGORIES: {
   { name: 'Retiro del dueño', type: 'OWNER' },
   { name: 'Reinversión', type: 'OWNER' },
   { name: 'Honorarios contador', type: 'TAX' },
-  { name: 'Nómina (manual)', type: 'PAYROLL' },
   { name: 'Otro gasto', type: 'OTHER' },
 ];
 

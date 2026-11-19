@@ -13,6 +13,13 @@ import { DailySalesService } from '../reports/daily-sales.service';
 import { DailySalesQueryDto } from '../reports/dto/daily-sales-query.dto';
 import { SalesByEmployeeService } from '../reports/sales-by-employee.service';
 import { SalesByEmployeeQueryDto } from '../reports/dto/sales-by-employee-query.dto';
+import { PayrollService } from '../payroll/payroll.service';
+import {
+  CreatePayrollPaymentDto,
+  FilterPayrollDto,
+  PayPayrollDto,
+} from '../payroll/dto/payroll.dto';
+import { PayrollStatus } from '@prisma/client';
 import { McpAuthorizationService } from './mcp-authorization.service';
 import { OwnershipContext } from '../common/ownership';
 
@@ -32,12 +39,15 @@ export interface ToolCaller {
  * El registro completo de tools. Cada una espeja un endpoint REST y pide el
  * mismo permiso que él — la tabla está en src/mcp/CLAUDE.md.
  *
- * **De aquí en adelante las tools son de sólo lectura.** `expense_create` es la
- * única excepción y es heredada: no se agrega otra que escriba. Agregar una tool
- * exige actualizar también specs/mcp-server/spec.md y el test del registro en
- * mcp-tools.service.spec.ts, que es lo que mantiene cierta la lista negra
- * (nómina, impuestos, usuarios/roles, credenciales de Shopify) conforme crece
- * esto.
+ * **Política de escritura.** Una tool que crea, actualiza o borra sólo se agrega
+ * junto con una política de escritura del agente para su dominio (quién, con qué
+ * permiso, a qué propietario). Hoy hay dos dominios con política: gastos
+ * (`expense_create`) y nómina (`payroll_create`, `payroll_pay`). Todo lo demás
+ * es de sólo lectura, y la nómina NO incluye impuestos de nómina. Agregar una
+ * tool exige actualizar specs/mcp-server/spec.md y el test del registro en
+ * mcp-tools.service.spec.ts, que enumera cada tool y cada tool de escritura y
+ * mantiene cierta la lista negra (impuestos de nómina, pagos de impuestos,
+ * cierre mensual, usuarios/roles, invitaciones, credenciales de Shopify).
  */
 @Injectable()
 export class McpToolsService {
@@ -45,6 +55,7 @@ export class McpToolsService {
     private readonly expensesService: ExpensesService,
     private readonly dailySalesService: DailySalesService,
     private readonly salesByEmployeeService: SalesByEmployeeService,
+    private readonly payrollService: PayrollService,
     private readonly mcpAuthorizationService: McpAuthorizationService,
   ) {}
 
@@ -234,6 +245,107 @@ export class McpToolsService {
       async (args) =>
         this.run(caller, 'expense_create', 'expense:create', true, (ctx) =>
           this.expensesService.create(ctx, args as CreateExpenseDto),
+        ),
+    );
+
+    const isoDate = (what: string) =>
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}/, 'Expected YYYY-MM-DD')
+        .describe(what);
+
+    server.registerTool(
+      'payroll_list',
+      {
+        title: 'List payroll payments',
+        description:
+          'Payroll payments (money paid or owed to employees) in the books of the ' +
+          'account the API key is bound to, with the same filters and the same ' +
+          'paginated envelope (data, total, page, limit) as GET /payroll. Read-only, ' +
+          'requires payroll:read. Both dates are required — there is no default ' +
+          'period, so resolve what the user meant and pass explicit dates; they ' +
+          'filter on date_field (scheduled_pay_date by default, or paid_at). ' +
+          'Use status=PENDING with a date range to find periods not yet paid. ' +
+          'This is the only record of money paid to employees; payroll is never ' +
+          'an expense.',
+        inputSchema: {
+          start_date: isoDate('First day, inclusive. Format YYYY-MM-DD.'),
+          end_date: isoDate('Last day, inclusive. Format YYYY-MM-DD.'),
+          employee_id: z.number().int().optional(),
+          status: z.nativeEnum(PayrollStatus).optional(),
+          date_field: z
+            .enum(['scheduled_pay_date', 'paid_at'])
+            .optional()
+            .describe('Which date start_date/end_date apply to.'),
+          page: z.number().int().min(1).optional(),
+          limit: z.number().int().min(1).max(100).optional(),
+        },
+      },
+      async (args) =>
+        this.run(caller, 'payroll_list', 'payroll:read', false, (ctx) =>
+          this.payrollService.findAll(ctx, args as FilterPayrollDto),
+        ),
+    );
+
+    server.registerTool(
+      'payroll_create',
+      {
+        title: 'Create manual payroll payment',
+        description:
+          'Records a manual payroll payment (a bonus or one-off adjustment) as ' +
+          'PENDING, mirroring POST /payroll. Write, requires payroll:create. The ' +
+          'employee must belong to the account the API key is bound to (otherwise ' +
+          'the call fails and nothing is created). It never creates a PAID payment: ' +
+          'to mark it paid call payroll_pay with the real paid_at and account_id. ' +
+          'All dates are explicit; no period is inferred. net = gross - deductions + bonuses.',
+        inputSchema: {
+          employee_id: z.number().int(),
+          period_start: isoDate('Period start. Format YYYY-MM-DD.'),
+          period_end: isoDate('Period end. Format YYYY-MM-DD.'),
+          scheduled_pay_date: isoDate('Planned pay date. Format YYYY-MM-DD.'),
+          gross_amount: z.number().min(0),
+          deductions: z.number().min(0).optional(),
+          bonuses: z.number().min(0).optional(),
+          account_id: z.number().int().optional(),
+          notes: z.string().optional(),
+        },
+      },
+      async (args) =>
+        this.run(caller, 'payroll_create', 'payroll:create', true, (ctx) =>
+          this.payrollService.createManual(
+            ctx,
+            args as CreatePayrollPaymentDto,
+          ),
+        ),
+    );
+
+    server.registerTool(
+      'payroll_pay',
+      {
+        title: 'Mark payroll payment as paid',
+        description:
+          'Marks a payroll payment as PAID, mirroring POST /payroll/:id/pay. Write, ' +
+          'requires payroll:update. paid_at and account_id are REQUIRED: only the ' +
+          'owner knows when the money left and from which account, so nothing is ' +
+          'defaulted to now. The payment must belong to an employee of the account ' +
+          'the API key is bound to, and an already PAID payment is refused. Paying ' +
+          'increases payroll_paid in the reports without touching operating_expenses.',
+        inputSchema: {
+          payment_id: z.number().int().describe('Id of the payroll payment.'),
+          paid_at: isoDate('When it was paid. Format YYYY-MM-DD.'),
+          account_id: z.number().int().describe('Account the money left from.'),
+        },
+      },
+      async (args) =>
+        this.run(caller, 'payroll_pay', 'payroll:update', true, (ctx) =>
+          this.payrollService.pay(
+            args.payment_id,
+            {
+              paid_at: args.paid_at,
+              account_id: args.account_id,
+            } as PayPayrollDto,
+            ctx,
+          ),
         ),
     );
 

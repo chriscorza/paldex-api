@@ -1,7 +1,6 @@
 import {
   Injectable,
   NotFoundException,
-  BadRequestException,
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
@@ -20,6 +19,7 @@ import {
   effectiveOwnerId,
 } from '../common/ownership';
 import { calculateDueDates, Frequency } from '../payroll/payroll-schedule';
+import { assertCategoryNotPayroll } from '../payroll/payroll-category.guard';
 import { CloseGuard } from '../monthly-close/close-guard';
 import { Prisma as PrismaClient } from '@prisma/client';
 
@@ -62,7 +62,21 @@ export class RecurringExpensesService {
     return new RecurringExpenseEntity(r);
   }
 
+  /*
+   * Una plantilla con categoría PAYROLL regeneraría, cada periodo y para
+   * siempre, el gasto que `ExpensesService` ya prohíbe.
+   */
+  private async assertNotPayrollCategory(categoryId?: number | null) {
+    if (categoryId === undefined || categoryId === null) return;
+    const category = await this.prisma.expenseCategory.findUnique({
+      where: { id: categoryId },
+      select: { type: true },
+    });
+    assertCategoryNotPayroll(category);
+  }
+
   async create(ctx: OwnershipContext, dto: CreateRecurringExpenseDto) {
+    await this.assertNotPayrollCategory(dto.category_id);
     return new RecurringExpenseEntity(
       await this.prisma.recurringExpense.create({
         data: {
@@ -101,6 +115,7 @@ export class RecurringExpensesService {
     dto: UpdateRecurringExpenseDto,
   ) {
     await this.findOne(ctx, id);
+    await this.assertNotPayrollCategory(dto.category_id);
     const data: any = {};
     for (const [k, v] of Object.entries(dto)) {
       if (v === undefined) continue;

@@ -1,11 +1,12 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ForbiddenException } from '@nestjs/common';
-import { McpToolsService } from './mcp-tools.service';
+import { McpToolsService, ToolCaller } from './mcp-tools.service';
 import { McpAuthorizationService } from './mcp-authorization.service';
 import { ExpensesService } from '../expenses/expenses.service';
 import { DailySalesService } from '../reports/daily-sales.service';
 import { SalesByEmployeeService } from '../reports/sales-by-employee.service';
+import { PayrollService } from '../payroll/payroll.service';
 
 /*
  * Exercises the real MCP protocol (tools/list, tools/call) end to end over an
@@ -17,14 +18,20 @@ describe('McpToolsService', () => {
   let expensesService: { findAll: jest.Mock; create: jest.Mock };
   let dailySalesService: { getDailySales: jest.Mock };
   let salesByEmployeeService: { getSalesByEmployee: jest.Mock };
+  let payrollService: {
+    findAll: jest.Mock;
+    createManual: jest.Mock;
+    pay: jest.Mock;
+  };
   let authService: { requireContext: jest.Mock };
   let client: Client;
 
-  async function connectClient(userId = 1) {
+  async function connectClient(userId: number | ToolCaller = 1) {
     const toolsService = new McpToolsService(
       expensesService as unknown as ExpensesService,
       dailySalesService as unknown as DailySalesService,
       salesByEmployeeService as unknown as SalesByEmployeeService,
+      payrollService as unknown as PayrollService,
       authService as unknown as McpAuthorizationService,
     );
     const server = toolsService.buildServer(userId);
@@ -41,6 +48,11 @@ describe('McpToolsService', () => {
     expensesService = { findAll: jest.fn(), create: jest.fn() };
     dailySalesService = { getDailySales: jest.fn() };
     salesByEmployeeService = { getSalesByEmployee: jest.fn() };
+    payrollService = {
+      findAll: jest.fn(),
+      createManual: jest.fn(),
+      pay: jest.fn(),
+    };
     authService = { requireContext: jest.fn() };
   });
 
@@ -52,25 +64,65 @@ describe('McpToolsService', () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       'expense_create',
       'expenses_list',
+      'payroll_create',
+      'payroll_list',
+      'payroll_pay',
       'sales_by_employee',
       'sales_daily',
     ]);
   });
 
   /*
-   * De aquí en adelante las tools son de sólo lectura: `expense_create` es la
-   * única excepción, y es heredada. Este test es lo que hace que agregar otra
-   * que escriba rompa el build en vez de pasar en revisión.
+   * Política de escritura: sólo hay escrituras en dominios con política de agente
+   * declarada (gastos y nómina). Este test enumera CADA tool de escritura: agregar
+   * otra sin tocarlo rompe el build en vez de pasar en revisión.
    */
-  it('keeps expense_create as the only write tool', async () => {
+  it('enumerates every write tool explicitly: expenses and payroll only', async () => {
     await connectClient();
 
     const { tools } = await client.listTools();
     const writeTools = tools
       .map((t) => t.name)
-      .filter((name) => /_(create|update|delete|upsert|pay|sync)$/.test(name));
+      .filter((name) => /_(create|update|delete|upsert|pay|sync)$/.test(name))
+      .sort();
 
-    expect(writeTools).toEqual(['expense_create']);
+    expect(writeTools).toEqual([
+      'expense_create',
+      'payroll_create',
+      'payroll_pay',
+    ]);
+  });
+
+  /*
+   * La lista negra es estructural: no hay tool —ni nombre ni argumento— que llegue
+   * a impuestos de nómina, pagos de impuestos, cierre mensual, usuarios/roles,
+   * invitaciones o credenciales de Shopify, aunque el rol tuviera esos permisos.
+   */
+  it('has no code path to the structural denylist', async () => {
+    await connectClient();
+
+    const { tools } = await client.listTools();
+    const denied =
+      /tax|close|role|user|invit|permission|shopify|credential|token|recalculate|generate/i;
+
+    for (const tool of tools) {
+      expect(tool.name).not.toMatch(denied);
+      for (const arg of Object.keys(
+        (tool.inputSchema as { properties?: object }).properties ?? {},
+      )) {
+        // Filtros legítimos como `is_tax_deductible` sí existen; lo vedado es la entrada a impuestos de nómina, roles, invitaciones y credenciales.
+        expect(arg).not.toMatch(
+          /tax_payment|payroll_tax|^role|invit|credential|token|shopify/i,
+        );
+      }
+    }
+    const names = tools.map((t) => t.name);
+    expect(names).not.toContain('payroll_generate');
+    expect(names.filter((n) => /payroll/.test(n)).sort()).toEqual([
+      'payroll_create',
+      'payroll_list',
+      'payroll_pay',
+    ]);
   });
 
   it('expenses_list checks expense:read and delegates to ExpensesService.findAll', async () => {
@@ -363,6 +415,194 @@ describe('McpToolsService', () => {
 
       expect(result.isError).toBe(true);
       expect(salesByEmployeeService.getSalesByEmployee).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('payroll tools', () => {
+    const listArgs = { start_date: '2026-08-01', end_date: '2026-08-31' };
+    const createArgs = {
+      employee_id: 3,
+      period_start: '2026-08-01',
+      period_end: '2026-08-15',
+      scheduled_pay_date: '2026-08-15',
+      gross_amount: 1000,
+      bonuses: 200,
+    };
+    const payArgs = { payment_id: 5, paid_at: '2026-08-15', account_id: 2 };
+
+    const cases: Array<[string, string, Record<string, unknown>]> = [
+      ['payroll_list', 'payroll:read', listArgs],
+      ['payroll_create', 'payroll:create', createArgs],
+      ['payroll_pay', 'payroll:update', payArgs],
+    ];
+
+    it.each(cases)(
+      '%s requires %s and returns nothing without it',
+      async (name, permission, args) => {
+        authService.requireContext.mockRejectedValue(
+          new ForbiddenException(`Missing permission: ${permission}`),
+        );
+        await connectClient(1);
+
+        const result = await client.callTool({ name, arguments: args });
+
+        expect(result.isError).toBe(true);
+        expect(authService.requireContext).toHaveBeenCalledWith(1, permission);
+        expect(payrollService.findAll).not.toHaveBeenCalled();
+        expect(payrollService.createManual).not.toHaveBeenCalled();
+        expect(payrollService.pay).not.toHaveBeenCalled();
+      },
+    );
+
+    it('payroll_list output equals the service output for the same filters', async () => {
+      const envelope = {
+        data: [{ id: 5, net_amount: 1200, status: 'PENDING' }],
+        total: 1,
+        page: 1,
+        limit: 50,
+      };
+      authService.requireContext.mockResolvedValue({ userId: 1, scope: 'OWN' });
+      payrollService.findAll.mockResolvedValue(envelope);
+      await connectClient(1);
+
+      const result = await client.callTool({
+        name: 'payroll_list',
+        arguments: { ...listArgs, status: 'PENDING', employee_id: 3 },
+      });
+
+      expect(payrollService.findAll).toHaveBeenCalledWith(
+        { userId: 1, scope: 'OWN' },
+        expect.objectContaining({
+          start_date: '2026-08-01',
+          end_date: '2026-08-31',
+          status: 'PENDING',
+          employee_id: 3,
+        }),
+      );
+      expect(
+        JSON.parse((result.content as Array<{ text: string }>)[0].text),
+      ).toEqual(envelope);
+    });
+
+    it('payroll_list has no implicit period: explicit dates are required', async () => {
+      authService.requireContext.mockResolvedValue({ userId: 1, scope: 'OWN' });
+      await connectClient(1);
+
+      const result = await client.callTool({
+        name: 'payroll_list',
+        arguments: {},
+      });
+
+      expect(result.isError).toBe(true);
+      expect(payrollService.findAll).not.toHaveBeenCalled();
+    });
+
+    it('payroll_create delegates to PayrollService.createManual and returns the payment', async () => {
+      authService.requireContext.mockResolvedValue({ userId: 1, scope: 'OWN' });
+      payrollService.createManual.mockResolvedValue({
+        id: 9,
+        status: 'PENDING',
+      });
+      await connectClient(1);
+
+      const result = await client.callTool({
+        name: 'payroll_create',
+        arguments: createArgs,
+      });
+
+      expect(result.isError).toBeFalsy();
+      expect(payrollService.createManual).toHaveBeenCalledWith(
+        { userId: 1, scope: 'OWN' },
+        expect.objectContaining({ employee_id: 3, bonuses: 200 }),
+      );
+    });
+
+    it('payroll_create cannot create a PAID payment in one call (no status argument)', async () => {
+      authService.requireContext.mockResolvedValue({ userId: 1, scope: 'OWN' });
+      await connectClient(1);
+      const { tools } = await client.listTools();
+      const create = tools.find((t) => t.name === 'payroll_create')!;
+
+      expect(
+        Object.keys((create.inputSchema as { properties: object }).properties),
+      ).not.toContain('status');
+    });
+
+    it('payroll_create refuses an employee outside the ownership target', async () => {
+      authService.requireContext.mockResolvedValue({ userId: 9, scope: 'ANY' });
+      payrollService.createManual.mockRejectedValue(
+        new Error('Employee not found'),
+      );
+      await connectClient({ userId: 9, keyId: 4, ownerUserId: 1 });
+
+      const result = await client.callTool({
+        name: 'payroll_create',
+        arguments: { ...createArgs, employee_id: 99 },
+      });
+
+      expect(result.isError).toBe(true);
+      // El servicio recibe el contexto con el propietario efectivo de la llave.
+      expect(payrollService.createManual).toHaveBeenCalledWith(
+        { userId: 9, scope: 'ANY', ownerUserId: 1 },
+        expect.anything(),
+      );
+    });
+
+    it.each([
+      ['paid_at', { payment_id: 5, account_id: 2 }],
+      ['account_id', { payment_id: 5, paid_at: '2026-08-15' }],
+    ])(
+      'payroll_pay without %s fails instead of defaulting',
+      async (_n, args) => {
+        authService.requireContext.mockResolvedValue({
+          userId: 1,
+          scope: 'OWN',
+        });
+        await connectClient(1);
+
+        const result = await client.callTool({
+          name: 'payroll_pay',
+          arguments: args,
+        });
+
+        expect(result.isError).toBe(true);
+        expect(payrollService.pay).not.toHaveBeenCalled();
+      },
+    );
+
+    it('payroll_pay passes id, paid_at, account_id and the caller context to the service', async () => {
+      authService.requireContext.mockResolvedValue({ userId: 9, scope: 'OWN' });
+      payrollService.pay.mockResolvedValue({ id: 5, status: 'PAID' });
+      await connectClient({ userId: 9, keyId: 4, ownerUserId: 1 });
+
+      const result = await client.callTool({
+        name: 'payroll_pay',
+        arguments: payArgs,
+      });
+
+      expect(result.isError).toBeFalsy();
+      expect(authService.requireContext).toHaveBeenCalledWith(
+        9,
+        'payroll:update',
+      );
+      expect(payrollService.pay).toHaveBeenCalledWith(
+        5,
+        { paid_at: '2026-08-15', account_id: 2 },
+        { userId: 9, scope: 'OWN', ownerUserId: 1 },
+      );
+    });
+
+    it('rejects malformed dates before reaching the service', async () => {
+      authService.requireContext.mockResolvedValue({ userId: 1, scope: 'OWN' });
+      await connectClient(1);
+
+      const result = await client.callTool({
+        name: 'payroll_pay',
+        arguments: { ...payArgs, paid_at: 'ayer' },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(payrollService.pay).not.toHaveBeenCalled();
     });
   });
 

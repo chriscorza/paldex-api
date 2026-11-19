@@ -5,6 +5,7 @@ import { McpToolsService, ToolCaller } from './mcp-tools.service';
 import { McpAuthorizationService } from './mcp-authorization.service';
 import { ExpensesService } from '../expenses/expenses.service';
 import { DailySalesService } from '../reports/daily-sales.service';
+import { PayrollService } from '../payroll/payroll.service';
 import { SalesByEmployeeService } from '../reports/sales-by-employee.service';
 
 /*
@@ -19,10 +20,16 @@ describe('MCP write attribution (fix-mcp-write-attribution)', () => {
   const B = 2; // otro dueño
 
   let expenses: any[];
+  let payments: any[];
   let nextId: number;
   let scope: 'OWN' | 'ANY';
   let client: Client;
   let authService: { requireContext: jest.Mock };
+
+  const employees = [
+    { id: 100, user_id: A, pay_frequency: 'MONTHLY' },
+    { id: 200, user_id: B, pay_frequency: 'MONTHLY' },
+  ];
 
   const accounts = [
     { id: 10, user_id: A },
@@ -56,6 +63,43 @@ describe('MCP write attribution (fix-mcp-write-attribution)', () => {
         Promise.resolve(expenses.filter((e) => matches(e, where)).length),
       ),
     },
+    employee: {
+      findFirst: jest.fn(({ where }) =>
+        Promise.resolve(employees.find((e) => matches(e, where)) ?? null),
+      ),
+    },
+    payrollPayment: {
+      create: jest.fn(({ data }) => {
+        const row = { id: nextId++, ...data };
+        payments.push(row);
+        return Promise.resolve({ ...row, employee: { name: 'x' } });
+      }),
+      findMany: jest.fn(({ where }) =>
+        Promise.resolve(
+          payments.filter(
+            (p) =>
+              !where.employee ||
+              employees.find((e) => e.id === p.employee_id)?.user_id ===
+                where.employee.user_id,
+          ),
+        ),
+      ),
+      count: jest.fn(() => Promise.resolve(payments.length)),
+      findUnique: jest.fn(({ where }) => {
+        const p = payments.find((x) => x.id === where.id);
+        return Promise.resolve(
+          p && {
+            ...p,
+            employee: employees.find((e) => e.id === p.employee_id),
+          },
+        );
+      }),
+      update: jest.fn(({ where, data }) => {
+        const p = payments.find((x) => x.id === where.id);
+        Object.assign(p, data);
+        return Promise.resolve({ ...p, employee: { name: 'x' } });
+      }),
+    },
     $transaction: jest.fn((ops) => Promise.all(ops)),
   };
 
@@ -64,6 +108,7 @@ describe('MCP write attribution (fix-mcp-write-attribution)', () => {
       new ExpensesService(prisma),
       {} as unknown as DailySalesService,
       {} as unknown as SalesByEmployeeService,
+      new PayrollService(prisma),
       authService as unknown as McpAuthorizationService,
     );
     const server = tools.buildServer(caller);
@@ -83,6 +128,7 @@ describe('MCP write attribution (fix-mcp-write-attribution)', () => {
 
   beforeEach(() => {
     expenses = [];
+    payments = [];
     nextId = 1;
     scope = 'OWN';
     authService = {
@@ -246,5 +292,129 @@ describe('MCP write attribution (fix-mcp-write-attribution)', () => {
       row_id: expenses[0].id,
     });
     logSpy.mockRestore();
+  });
+
+  describe('payroll writes follow the key owner (4.3, 5.5)', () => {
+    const payment = (employee_id: number) => ({
+      employee_id,
+      period_start: '2026-08-01',
+      period_end: '2026-08-15',
+      scheduled_pay_date: '2026-08-15',
+      gross_amount: 1000,
+      bonuses: 100,
+    });
+
+    it('a bonus for the owner’s employee is created', async () => {
+      await connect({ userId: AGENT, keyId: 4, ownerUserId: A });
+
+      const res = await client.callTool({
+        name: 'payroll_create',
+        arguments: payment(100),
+      });
+
+      expect(res.isError).toBeFalsy();
+      expect(payments).toHaveLength(1);
+    });
+
+    it('a bonus against another owner’s employee is refused, even under ANY scope', async () => {
+      for (const s of ['OWN', 'ANY'] as const) {
+        scope = s;
+        await connect({ userId: AGENT, keyId: 4, ownerUserId: A });
+
+        const res = await client.callTool({
+          name: 'payroll_create',
+          arguments: payment(200),
+        });
+
+        expect(res.isError).toBe(true);
+        expect((res.content as any)[0].text).toMatch(/Employee not found/);
+      }
+      expect(payments).toHaveLength(0);
+    });
+
+    it('a payment account from another owner is refused', async () => {
+      await connect({ userId: AGENT, keyId: 4, ownerUserId: A });
+
+      const res = await client.callTool({
+        name: 'payroll_create',
+        arguments: { ...payment(100), account_id: 20 },
+      });
+
+      expect(res.isError).toBe(true);
+      expect(payments).toHaveLength(0);
+    });
+
+    it('a key without owner cannot write payroll', async () => {
+      await connect({ userId: AGENT, keyId: 4, ownerUserId: null });
+
+      const res = await client.callTool({
+        name: 'payroll_create',
+        arguments: payment(100),
+      });
+
+      expect(res.isError).toBe(true);
+      expect(payments).toHaveLength(0);
+    });
+
+    it('payroll_pay refuses another owner’s payment (404) and pays the owner’s', async () => {
+      payments.push(
+        { id: 500, employee_id: 200, status: 'PENDING', net_amount: 1 },
+        { id: 501, employee_id: 100, status: 'PENDING', net_amount: 1 },
+      );
+      prisma.account.findUnique = jest.fn().mockResolvedValue({
+        id: 10,
+        is_active: true,
+      });
+      await connect({ userId: AGENT, keyId: 4, ownerUserId: A });
+
+      const foreign = await client.callTool({
+        name: 'payroll_pay',
+        arguments: { payment_id: 500, paid_at: '2026-08-15', account_id: 10 },
+      });
+      expect(foreign.isError).toBe(true);
+      expect(payments[0].status).toBe('PENDING');
+
+      const own = await client.callTool({
+        name: 'payroll_pay',
+        arguments: { payment_id: 501, paid_at: '2026-08-15', account_id: 10 },
+      });
+      expect(own.isError).toBeFalsy();
+      expect(payments[1].status).toBe('PAID');
+    });
+
+    it('payroll_pay on an already PAID payment fails and records nothing new', async () => {
+      payments.push({
+        id: 502,
+        employee_id: 100,
+        status: 'PAID',
+        net_amount: 1,
+      });
+      await connect({ userId: AGENT, keyId: 4, ownerUserId: A });
+
+      const res = await client.callTool({
+        name: 'payroll_pay',
+        arguments: { payment_id: 502, paid_at: '2026-08-16', account_id: 10 },
+      });
+
+      expect(res.isError).toBe(true);
+      expect(prisma.payrollPayment.update).not.toHaveBeenCalled();
+    });
+
+    it('with the role reduced to OWN, payroll_list still reads the owner’s payments only', async () => {
+      scope = 'OWN';
+      payments.push(
+        { id: 600, employee_id: 100, status: 'PENDING' },
+        { id: 601, employee_id: 200, status: 'PENDING' },
+      );
+      await connect({ userId: AGENT, keyId: 4, ownerUserId: A });
+
+      const res = await client.callTool({
+        name: 'payroll_list',
+        arguments: { start_date: '2026-08-01', end_date: '2026-08-31' },
+      });
+
+      const parsed = JSON.parse((res.content as any)[0].text);
+      expect(parsed.data.map((p: any) => p.id)).toEqual([600]);
+    });
   });
 });

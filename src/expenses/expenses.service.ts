@@ -27,6 +27,7 @@ import {
   effectiveOwnerId,
   isDelegated,
 } from '../common/ownership';
+import { assertCategoryNotPayroll } from '../payroll/payroll-category.guard';
 import { startOfDayInZone } from '../common/timezone';
 
 @Injectable()
@@ -77,12 +78,13 @@ export class ExpensesService {
   }
 
   async create(ctx: OwnershipContext, dto: CreateExpenseDto) {
-    await this.validateForeignKeys(
+    const category = await this.validateForeignKeys(
       ctx,
       dto.account_id,
       dto.tax_ids,
       dto.category_id,
     );
+    assertCategoryNotPayroll(category);
 
     const status = dto.status || 'PAID';
     const paid_at = dto.paid_at || (status === 'PAID' ? dto.date : null);
@@ -148,13 +150,18 @@ export class ExpensesService {
       throw new NotFoundException(`Expense with id ${id} not found`);
     }
 
-    if (dto.account_id !== undefined) {
-      await this.validateForeignKeys(
+    if (
+      dto.account_id !== undefined ||
+      (dto.category_id !== undefined && dto.category_id !== null)
+    ) {
+      const category = await this.validateForeignKeys(
         ctx,
         dto.account_id,
         undefined,
         dto.category_id,
       );
+      /* Un gasto existente tampoco se puede re-archivar como nómina. */
+      assertCategoryNotPayroll(category);
     }
 
     const status = dto.status ?? existing.status;
@@ -334,7 +341,7 @@ export class ExpensesService {
     account_id?: number,
     tax_ids?: number[],
     category_id?: number,
-  ): Promise<void> {
+  ): Promise<{ type: string } | null> {
     if (account_id !== undefined) {
       const accountWhere: Prisma.AccountWhereInput = { id: account_id };
       Object.assign(accountWhere, buildWriteTargetFilter(ctx));
@@ -370,7 +377,9 @@ export class ExpensesService {
           `Expense category with id ${category_id} does not exist`,
         );
       }
+      return category;
     }
+    return null;
   }
 
   private validateStatusDateCoherence(

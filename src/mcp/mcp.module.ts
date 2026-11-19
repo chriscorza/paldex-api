@@ -3,12 +3,19 @@ import { PrismaModule } from 'src/prisma.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { ExpensesModule } from '../expenses/expenses.module';
 import { ReportsModule } from '../reports/reports.module';
+import { PayrollModule } from '../payroll/payroll.module';
 import { McpController } from './mcp.controller';
 import { McpAuthorizationService } from './mcp-authorization.service';
 import { McpToolsService } from './mcp-tools.service';
 
 @Module({
-  imports: [PrismaModule, PermissionsModule, ExpensesModule, ReportsModule],
+  imports: [
+    PrismaModule,
+    PermissionsModule,
+    ExpensesModule,
+    ReportsModule,
+    PayrollModule,
+  ],
   controllers: [McpController],
   providers: [McpAuthorizationService, McpToolsService],
 })

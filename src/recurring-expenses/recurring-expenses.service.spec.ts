@@ -32,6 +32,9 @@ describe('RecurringExpensesService — carga de histórico', () => {
     prisma = {
       recurringExpense: { findMany: jest.fn().mockResolvedValue([plantilla]) },
       expense: { create: jest.fn() },
+      expenseCategory: {
+        findUnique: jest.fn().mockResolvedValue({ type: 'OPERATING' }),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
