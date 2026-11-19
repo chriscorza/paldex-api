@@ -53,9 +53,9 @@ const ctx: OwnershipContext = { userId: user.id, scope: request.permissionScope 
 |---|---|---|
 | Listar / leer por id | sólo pagos cuyo `employee.user_id = effectiveOwnerId` | todos (`buildOwnerFilter` vacío) |
 | Editar / borrar por id | sólo los propios | cualquiera (modifica estado de un pago ya existente, no reubica filas) |
-| Pagar por id | sólo los propios; cuenta del propietario | cualquiera, pero **la cuenta** debe ser del propietario efectivo si se actúa en nombre de otro (`buildWriteTargetFilter`) |
-| Alta manual | empleado y cuenta del propietario | igual: `buildWriteTargetFilter` (ya implementado) |
-| Generar | empleados del propietario efectivo | **también** del propietario efectivo (cambio, Q1) |
+| Pagar por id | sólo los propios; cuenta del propietario | cualquiera, pero **la cuenta** debe ser del propietario efectivo si se actúa en nombre de otro (estricto, `ownerBooks`: Q2) |
+| Alta manual | empleado y cuenta del propietario | igual, estricto `ownerBooks` (Q2; antes `buildWriteTargetFilter`, que con `ANY` sin delegar no restringía) |
+| Generar | empleados del propietario efectivo | **también** del propietario efectivo (cambio, Q1; filtro estricto `ownerBooks`) |
 
 Criterio: el scope amplía lo que se **lee/administra**, no a qué libros se lanza una fila nueva (misma frase que `ownership.ts`). Un pago ajeno que un `ANY` paga con una cuenta propia no tiene sentido contable, de ahí validar la cuenta contra el propietario efectivo. Detalle fino en Q2.
 
@@ -76,17 +76,17 @@ Luego `update`/`delete` por `id` (el propietario del empleado no cambia dentro d
 ### D5 — Validación de empleado/cuenta contra el propietario efectivo
 
 - `createManual`: ya valida empleado (`404`) y cuenta (`400`) con `buildWriteTargetFilter`. Sin cambio funcional; test cross-owner explícito.
-- `update`: `UpdatePayrollPaymentDto` sólo admite `deductions`, `bonuses`, `notes`, `status`; **no hay `employee_id` ni `account_id` que validar**. Basta el filtro de propiedad por id. Una guarda en el test (no en código) asegura que el DTO no gane esos campos sin validación (`it` que enumera las claves del DTO).
+- `update`: `UpdatePayrollPaymentDto` sólo admite `deductions`, `bonuses`, `notes`, `status`; **no hay `employee_id` ni `account_id` que validar**. Basta el filtro de propiedad por id (más el rechazo de `status: PAID`, D7). Una guarda en el test (no en código) asegura que el DTO no gane esos campos sin validación (`it` que enumera las claves del DTO).
 - `pay`: la cuenta final (`dto.account_id ?? existing.account_id ?? employee.default_payment_account_id`) se valida **siempre** con `assertAccountInOwnerBooks`, no sólo con `ctx`. Un `default_payment_account_id` heredado de otro libro también cae aquí → `400`.
-- `generate`: empleados con `buildWriteTargetFilter(ctx)`.
+- `generate`: empleados con `ownerBooks(ctx)` (`{ user_id: effectiveOwnerId(ctx) }`), no `buildWriteTargetFilter` (ver Q1).
 
 ### D6 — Sin columna `user_id` en `PayrollPayment`
 
 Se mantiene la propiedad por `employee.user_id` (join en cada consulta). Añadir `user_id` desnormalizado daría un `where: { id, user_id }` más simple, pero exige migración + backfill y mantener dos fuentes de verdad (empleado y pago) sin ganar nada para este bug. Se anota como posible endurecimiento futuro. Los índices existentes (`employee_id`) cubren el join; el volumen es de decenas de filas.
 
-### D7 — Hallazgo lateral: `PATCH` puede dejar un pago `PAID` sin cuenta ni fecha
+### D7 — Hallazgo lateral: `PATCH` puede dejar un pago `PAID` sin cuenta ni fecha (resuelto en este change, Q3)
 
-`update` valida la transición `PENDING → PAID` pero no exige `paid_at` ni `account_id`, saltándose `pay`. No es un problema de propiedad (fuera de alcance), pero afecta `payroll_paid`. Se registra como Q3; si el dueño dice sí, es una tarea pequeña (rechazar `status: PAID` en `PATCH` apuntando a `/pay`, mismo estilo que `assertCategoryNotPayroll`).
+`update` valida la transición `PENDING → PAID` pero no exige `paid_at` ni `account_id`, saltándose `pay`. No es un problema de propiedad (fuera de alcance), pero afecta `payroll_paid`. El dueño dijo sí (Q3): `update` rechaza `status: PAID` con `400` apuntando a `/pay`, tras comprobar propiedad. Un `PATCH` a `CANCELLED`/`SKIPPED`/`PENDING` no cambia.
 
 ### D8 — Búsqueda del mismo patrón en otros módulos (sólo se listan)
 
@@ -127,11 +127,13 @@ Los dos vulnerables de payables/receivables son «trivialmente» el mismo arregl
 3. Después, con un usuario `OWN` de prueba (o el dueño con dos cuentas): `GET /payroll/<id de otro>` → `404`; propio → `200`; `POST /payroll/generate` con `ANY` → sólo empleados propios; MCP `payroll_pay` sigue funcionando con la llave re-enlazada.
 4. Revisar logs 24 h: un pico de `404` en `/payroll/:id` indicaría un cliente que dependía del comportamiento anterior.
 
-## Open Questions
+## Decisiones cerradas (Open Questions resueltas por el dueño)
 
-- **Q1.** `POST /payroll/generate` bajo `ANY`: ¿debe generar sólo para el propietario efectivo (recomendado, tarea 3.3) o conservar «todos los propietarios» para administración global?
-- **Q2.** Con `ANY`, ¿se permite **mutar** (editar/pagar/borrar) pagos de otro propietario (recomendado: sí, coherente con la ruta MCP actual) o las mutaciones deben exigir siempre propietario efectivo (más estricto, `buildWriteTargetFilter` también para el pago)? Hoy sólo `ai_agent` y admin tienen `ANY`.
-- **Q3.** ¿Se prohíbe `PATCH /payroll/:id` con `status: PAID` (obligando a usar `/pay`) en este mismo change o en uno aparte? (D7)
-- **Q4.** ¿Se corrige `payables.removePayment` / `receivables.removeCollection` en este change (+2 tareas pequeñas) o en un change propio inmediato (recomendado)?
-- **Q5.** ¿Existe algún script, Postman o integración tuya que llame `/payroll/:id` sobre pagos de **otro** usuario? ¿Existe hoy más de un usuario con scope `OWN` con empleados?
-- **Q6.** ¿Prefieres además el endurecimiento de D6 (columna `user_id` en `PayrollPayment`) como change futuro, o basta el join por empleado?
+Todas = opción recomendada.
+
+- **Q1 — resuelta.** `POST /payroll/generate` crea pagos sólo para empleados del propietario efectivo, también bajo `ANY`. Matiz de implementación: `buildWriteTargetFilter` devuelve `{}` con `ANY` **sin** delegación (admin con su propia llave), así que por sí solo no restringiría nada. Payroll usa un filtro propio y estricto, `{ user_id: effectiveOwnerId(ctx) }` (helper privado `ownerBooks(ctx)`), para generar, y se aplica igual en las demás escrituras de Q2.
+- **Q2 — resuelta.** Con `ANY` se puede editar, pagar y borrar el pago de otro propietario (cambia el estado de una fila existente), pero el **empleado** (alta manual, generación) y la **cuenta destino** (alta manual, pago) de una escritura deben ser del propietario efectivo. Misma regla estricta `ownerBooks(ctx)` en `createManual`, `generate` y `pay`; para `OWN` o actuando en nombre de otro es idéntica a `buildWriteTargetFilter`, así que el MCP no cambia. Lecturas siguen con `buildOwnerFilter`.
+- **Q3 — resuelta: sí, en este change.** `PATCH /payroll/:id` con `status: PAID` se rechaza con `400` que apunta a `POST /payroll/:id/pay`. Se comprueba **después** de la propiedad (un id ajeno sigue siendo `404`). Las demás transiciones de `PATCH` no cambian. Tarea 1.6, test 3.7 y escenario en el delta de spec.
+- **Q4 — resuelta: no se tocan aquí.** `payables.removePayment` y `receivables.removeCollection` (y `product-category-overrides`) quedan documentados en D8 para un change propio (`fix-payables-receivables-rest-ownership`, tarea 5.4: crear el change sólo como propuesta).
+- **Q5 — resuelta.** Se asume que no hay consumidores externos de `/payroll/:id` sobre pagos ajenos (sin scripts/Postman/integraciones).
+- **Q6 — resuelta: no.** Sin columna `user_id` en `PayrollPayment` ni migración; la propiedad sigue por `employee.user_id` (D6).
