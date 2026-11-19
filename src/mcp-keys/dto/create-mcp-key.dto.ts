@@ -34,4 +34,14 @@ export class CreateMcpKeyDto {
   @IsOptional()
   @IsDateString()
   expires_at?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Cuyos libros lee y escribe la llave (sus filas caen ahí). Si se omite, el usuario ' +
+      'que la crea. La autorización sigue saliendo del rol de `user_id`, no del de esta cuenta.',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt()
+  owner_user_id?: number;
 }

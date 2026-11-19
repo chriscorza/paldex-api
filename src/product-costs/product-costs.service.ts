@@ -14,7 +14,11 @@ import {
   ProductCostEntity,
   PRODUCT_COST_SELECT,
 } from './entities/product-cost.entity';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+} from '../common/ownership';
 
 @Injectable()
 export class ProductCostsService {
@@ -75,7 +79,7 @@ export class ProductCostsService {
           : new Date(),
         source: dto.source ?? 'MANUAL',
         notes: dto.notes ?? null,
-        user_id: ctx.userId,
+        user_id: effectiveOwnerId(ctx),
       },
       select: PRODUCT_COST_SELECT,
     });
@@ -132,7 +136,7 @@ export class ProductCostsService {
     let updated = 0;
 
     for (const entry of dto.entries) {
-      const where: any = { user_id: ctx.userId };
+      const where: any = { user_id: effectiveOwnerId(ctx) };
       if (entry.shopify_variant_id)
         where.shopify_variant_id = entry.shopify_variant_id;
       else if (entry.sku) where.sku = entry.sku;
@@ -163,7 +167,7 @@ export class ProductCostsService {
             effective_from: effectiveDate,
             source: entry.source ?? 'MANUAL',
             notes: entry.notes ?? null,
-            user_id: ctx.userId,
+            user_id: effectiveOwnerId(ctx),
           },
         });
         created++;

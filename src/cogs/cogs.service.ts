@@ -6,7 +6,11 @@ import {
 import { PrismaService } from '../prisma.service';
 import { CreateCogsDto, UpdateCogsDto } from './dto/create-cogs.dto';
 import { CogsEntity, COGS_PUBLIC_SELECT } from './entities/cogs.entity';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+} from '../common/ownership';
 import { Prisma as PrismaClient } from '@prisma/client';
 const Decimal = PrismaClient.Decimal;
 type Decimal = PrismaClient.Decimal;
@@ -75,7 +79,10 @@ export class CogsService {
       throw new NotFoundException('COGS row not found');
     }
 
-    if (ctx.scope === 'OWN' && existing.income.user_id !== ctx.userId) {
+    if (
+      ctx.scope === 'OWN' &&
+      existing.income.user_id !== effectiveOwnerId(ctx)
+    ) {
       throw new NotFoundException('COGS row not found');
     }
 
@@ -113,7 +120,10 @@ export class CogsService {
       throw new NotFoundException('COGS row not found');
     }
 
-    if (ctx.scope === 'OWN' && existing.income.user_id !== ctx.userId) {
+    if (
+      ctx.scope === 'OWN' &&
+      existing.income.user_id !== effectiveOwnerId(ctx)
+    ) {
       throw new NotFoundException('COGS row not found');
     }
 

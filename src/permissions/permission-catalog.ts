@@ -161,6 +161,7 @@ export const PERMISSION_CATALOG = [
    */
   { resource: 'mcp_key', action: 'create' },
   { resource: 'mcp_key', action: 'read' },
+  { resource: 'mcp_key', action: 'update' },
   { resource: 'mcp_key', action: 'delete' },
 ] as const;
 

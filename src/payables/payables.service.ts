@@ -5,7 +5,11 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+} from '../common/ownership';
 import { CreatePayableDto } from './dto/create-payable.dto';
 import { UpdatePayableDto } from './dto/update-payable.dto';
 import { AddPayablePaymentDto } from './dto/add-payable-payment.dto';
@@ -88,7 +92,7 @@ export class PayablesService {
         due_date: new Date(dto.due_date),
         account_id: dto.account_id ?? null,
         notes: dto.notes ?? null,
-        user_id: ctx.userId,
+        user_id: effectiveOwnerId(ctx),
         paid_amount: 0,
       },
     });

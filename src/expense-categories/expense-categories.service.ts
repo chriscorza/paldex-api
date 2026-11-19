@@ -12,7 +12,7 @@ import {
 } from './dto/create-expense-category.dto';
 import { ExpenseCategoryType } from '@prisma/client';
 import { EXPENSE_CATEGORY_PUBLIC_SELECT } from './entities/expense-category.entity';
-import { OwnershipContext } from '../common/ownership';
+import { OwnershipContext, effectiveOwnerId } from '../common/ownership';
 
 const DEFAULT_FLAGS: Record<
   ExpenseCategoryType,
@@ -144,7 +144,7 @@ export class ExpenseCategoriesService {
     const where: any = {};
     const ownerFilter =
       ctx.scope === 'OWN'
-        ? { OR: [{ user_id: ctx.userId }, { is_system: true }] }
+        ? { OR: [{ user_id: effectiveOwnerId(ctx) }, { is_system: true }] }
         : {};
     Object.assign(where, ownerFilter);
 
@@ -176,7 +176,7 @@ export class ExpenseCategoriesService {
   async findOne(ctx: OwnershipContext, id: number) {
     const where: any = { id };
     if (ctx.scope === 'OWN') {
-      where.OR = [{ user_id: ctx.userId }, { is_system: true }];
+      where.OR = [{ user_id: effectiveOwnerId(ctx) }, { is_system: true }];
     }
 
     const category = await this.prisma.expenseCategory.findFirst({
@@ -205,7 +205,7 @@ export class ExpenseCategoriesService {
           affects_operating_profit:
             dto.affects_operating_profit ?? defaults.affects_operating_profit,
           is_cash_outflow: dto.is_cash_outflow ?? defaults.is_cash_outflow,
-          user_id: ctx.userId,
+          user_id: effectiveOwnerId(ctx),
         },
         select: EXPENSE_CATEGORY_PUBLIC_SELECT,
       });

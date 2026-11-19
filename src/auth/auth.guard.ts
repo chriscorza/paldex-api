@@ -65,6 +65,11 @@ export class AuthGuard implements CanActivate {
        * permisos siguen saliendo del rol del usuario.
        */
       request['user'] = { id: key.user_id, email: key.email };
+      /*
+       * Lo que el controlador MCP necesita para separar «quién llama» de «de quién
+       * son los libros». Sólo lo pone esta rama: un JWT nunca lo trae.
+       */
+      request['apiKey'] = { id: key.id, owner_user_id: key.owner_user_id };
       return true;
     }
 

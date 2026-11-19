@@ -9,6 +9,7 @@ describe('proyección de una API key', () => {
   const fila = {
     id: 1,
     user_id: 9,
+    owner_user_id: 1,
     name: 'Asistente de IA',
     token_prefix: 'k3Jd9aQ2',
     last_used_at: null,

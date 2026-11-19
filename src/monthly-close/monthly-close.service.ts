@@ -5,7 +5,11 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+} from '../common/ownership';
 import { monthRangeInZone } from '../common/timezone';
 import { ListMonthlyCloseDto } from './dto/list-monthly-close.dto';
 import { ReportsAggregationService } from '../reports/reports-aggregation.service';
@@ -55,7 +59,9 @@ export class MonthlyCloseService {
 
   async findOne(ctx: OwnershipContext, year: number, month: number) {
     const close = await this.prisma.monthlyClose.findUnique({
-      where: { user_id_year_month: { user_id: ctx.userId, year, month } },
+      where: {
+        user_id_year_month: { user_id: effectiveOwnerId(ctx), year, month },
+      },
     });
     if (!close) {
       return { year, month, status: 'OPEN' };
@@ -111,7 +117,7 @@ export class MonthlyCloseService {
     const prevClose = await this.prisma.monthlyClose.findUnique({
       where: {
         user_id_year_month: {
-          user_id: ctx.userId,
+          user_id: effectiveOwnerId(ctx),
           year: month === 1 ? year - 1 : year,
           month: month === 1 ? 12 : month - 1,
         },
@@ -199,12 +205,14 @@ export class MonthlyCloseService {
     const fingerprint = await this.computeFingerprint(ctx, startDate, endDate);
 
     await this.prisma.monthlyClose.upsert({
-      where: { user_id_year_month: { user_id: ctx.userId, year, month } },
+      where: {
+        user_id_year_month: { user_id: effectiveOwnerId(ctx), year, month },
+      },
       create: {
         year,
         month,
         status: 'CLOSED',
-        user_id: ctx.userId,
+        user_id: effectiveOwnerId(ctx),
         income_total: report.net_sales,
         expense_total: report.calculated_operating_expenses,
         cogs_total: report.cogs ?? 0,
@@ -246,20 +254,24 @@ export class MonthlyCloseService {
   ) {
     if (!reason) throw new BadRequestException('Reopen reason is required');
     const close = await this.prisma.monthlyClose.findUnique({
-      where: { user_id_year_month: { user_id: ctx.userId, year, month } },
+      where: {
+        user_id_year_month: { user_id: effectiveOwnerId(ctx), year, month },
+      },
     });
     if (!close || close.status !== 'CLOSED')
       throw new ConflictException('Month is not closed');
 
     await this.prisma.monthlyClose.update({
-      where: { user_id_year_month: { user_id: ctx.userId, year, month } },
+      where: {
+        user_id_year_month: { user_id: effectiveOwnerId(ctx), year, month },
+      },
       data: { status: 'OPEN', reopened_reason: reason },
     });
 
     // Cascade: reopen all subsequent closed months
     const subsequent = await this.prisma.monthlyClose.findMany({
       where: {
-        user_id: ctx.userId,
+        user_id: effectiveOwnerId(ctx),
         status: 'CLOSED',
         OR: [
           { year: { gt: year } },
@@ -282,7 +294,9 @@ export class MonthlyCloseService {
 
   async checkIntegrity(ctx: OwnershipContext, year: number, month: number) {
     const close = await this.prisma.monthlyClose.findUnique({
-      where: { user_id_year_month: { user_id: ctx.userId, year, month } },
+      where: {
+        user_id_year_month: { user_id: effectiveOwnerId(ctx), year, month },
+      },
     });
     if (!close || close.status !== 'CLOSED')
       return { status: 'NOT_CLOSED', year, month };
@@ -323,8 +337,15 @@ export class MonthlyCloseService {
 
   async review(ctx: OwnershipContext, year: number, month: number) {
     return this.prisma.monthlyClose.upsert({
-      where: { user_id_year_month: { user_id: ctx.userId, year, month } },
-      create: { year, month, status: 'REVIEWING', user_id: ctx.userId },
+      where: {
+        user_id_year_month: { user_id: effectiveOwnerId(ctx), year, month },
+      },
+      create: {
+        year,
+        month,
+        status: 'REVIEWING',
+        user_id: effectiveOwnerId(ctx),
+      },
       update: { status: 'REVIEWING' },
     });
   }

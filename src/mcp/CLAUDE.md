@@ -17,7 +17,7 @@ this, so breaking the rule fails the build rather than passing review.
 | `expenses_list` | `GET /expenses` | `expense:read` | scope-aware (`OWN`/`ANY`) |
 | `sales_daily` | `GET /reports/sales-daily` | `report:read` | scope-aware (`OWN`/`ANY`) |
 | `sales_by_employee` | `GET /reports/sales-by-employee` | `report:read` | scope-aware (`OWN`/`ANY`) |
-| `expense_create` | `POST /expenses` | `expense:create` | always attributes to the caller |
+| `expense_create` | `POST /expenses` | `expense:create` | attributes to the key's `owner_user_id` |
 
 Keep this table in sync with `src/mcp/mcp-tools.service.ts` — a hand-written tool list can drift
 from the REST contract silently otherwise (see design.md "Risks").
@@ -71,9 +71,26 @@ only the permissions the current tool set needs. Never point a human user's JWT 
 for anything but testing: the whole point of the `ai_agent` role is that its permissions are the
 actual ceiling on what an AI agent can do here, narrower than what an admin or regular user can.
 
-**A key authenticates; the role authorizes.** A valid key resolves to its owning user and nothing
-more — `PermissionsGuard` and `McpAuthorizationService` cannot tell it from a JWT, and the role
-still decides every tool call.
+**A key authenticates, its role authorizes, and its `owner_user_id` decides whose books the call
+touches — three separate things.** A valid key resolves to its service-account user (`user_id`);
+`PermissionsGuard` and `McpAuthorizationService` cannot tell it from a JWT, and that user's role
+still decides every tool call (permission *and* scope — never the owner's role). The key's
+`owner_user_id` is the account whose books the tools read (`OWN` filter) and write (`user_id` of the
+created row); it travels as `OwnershipContext.ownerUserId` and is read with `effectiveOwnerId(ctx)`.
+
+- **No tool takes an owner argument.** Attribution is a property of the credential, not the payload;
+  a model cannot forget it, invent it or be talked into changing it. The registry test asserts it.
+- **A key with `owner_user_id = null` is refused on writes** (error names the key), never silently
+  treated as the bot's books. Migrations backfill `owner_user_id = user_id`, so an existing key acts
+  as itself until an operator rebinds it with `PATCH /mcp-keys/:id` (permission `mcp_key:update`).
+- `POST /mcp-keys` defaults `owner_user_id` to the creating user; create and rebind validate the owner
+  exists and is active (invitation not `REVOKED`).
+- **Rebinding changes reads and writes**, because both are "acting on that account's behalf".
+- When a call acts for another account, FK targets (accounts, categories, employees) must belong to
+  that owner even if the caller's scope is `ANY` (`buildWriteTargetFilter`): scope widens what is
+  *read*, not which books a row may be thrown into.
+- Every tool call emits one structured log line `{ tool, key_id, caller_user_id, owner_user_id,
+  outcome, row_id }` (no audit table; per-row provenance would be its own change).
 
 **A key works only on `POST /mcp`.** `AuthGuard` rejects one on any route without
 `@AllowApiKey()` — including `/mcp-keys` itself, so a leaked key cannot mint more. The opt-in is

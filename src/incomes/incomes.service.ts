@@ -19,7 +19,12 @@ import {
   buildPagination,
   paginatedResponse,
 } from '../common/filters';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+  buildWriteTargetFilter,
+} from '../common/ownership';
 import { Prisma as PrismaClient } from '@prisma/client';
 import { startOfDayInZone } from '../common/timezone';
 const Decimal = PrismaClient.Decimal;
@@ -79,7 +84,7 @@ export class IncomesService {
     try {
       const income = await this.prisma.income.create({
         data: {
-          user_id: ctx.userId,
+          user_id: effectiveOwnerId(ctx),
           amount: dto.amount,
           concept: dto.concept,
           date: startOfDayInZone(dto.date),
@@ -318,9 +323,7 @@ export class IncomesService {
   ): Promise<void> {
     if (account_id !== undefined) {
       const accountWhere: Prisma.AccountWhereInput = { id: account_id };
-      if (ctx.scope === 'OWN') {
-        accountWhere.user_id = ctx.userId;
-      }
+      Object.assign(accountWhere, buildWriteTargetFilter(ctx));
       const account = await this.prisma.account.findFirst({
         where: accountWhere,
       });

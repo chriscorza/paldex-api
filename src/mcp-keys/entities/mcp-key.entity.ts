@@ -12,6 +12,13 @@ export class McpKeyEntity {
   @ApiProperty({ description: 'La cuenta a la que pertenece la llave.' })
   user_id: number;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Cuyos libros lee y escribe la llave. Autenticar (`user_id`) y decidir de quién son las filas son cosas distintas.',
+  })
+  owner_user_id: number | null;
+
   @ApiProperty({ example: 'Asistente de IA — producción' })
   name: string;
 
@@ -52,6 +59,7 @@ export class McpKeyEntity {
   constructor(partial: McpKeyEntity) {
     this.id = partial.id;
     this.user_id = partial.user_id;
+    this.owner_user_id = partial.owner_user_id ?? null;
     this.name = partial.name;
     this.token_prefix = partial.token_prefix;
     this.last_used_at = partial.last_used_at ?? null;

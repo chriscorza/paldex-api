@@ -5,7 +5,11 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+} from '../common/ownership';
 import { CreateReceivableDto } from './dto/create-receivable.dto';
 import { UpdateReceivableDto } from './dto/update-receivable.dto';
 import { AddReceivableCollectionDto } from './dto/add-receivable-collection.dto';
@@ -79,7 +83,7 @@ export class ReceivablesService {
         due_date: new Date(dto.due_date),
         related_income_id: dto.related_income_id ?? null,
         notes: dto.notes ?? null,
-        user_id: ctx.userId,
+        user_id: effectiveOwnerId(ctx),
         collected_amount: 0,
       },
     });

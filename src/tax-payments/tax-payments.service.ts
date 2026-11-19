@@ -16,7 +16,11 @@ import {
   TaxPaymentEntity,
   TAX_PAYMENT_PUBLIC_SELECT,
 } from './entities/tax-payment.entity';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+} from '../common/ownership';
 import { Prisma, Prisma as PrismaClient } from '@prisma/client';
 const Decimal = PrismaClient.Decimal;
 type Decimal = PrismaClient.Decimal;
@@ -47,7 +51,7 @@ export class TaxPaymentsService {
         account_id: dto.account_id,
         status,
         notes: dto.notes ?? null,
-        user_id: ctx.userId,
+        user_id: effectiveOwnerId(ctx),
       },
       select: TAX_PAYMENT_PUBLIC_SELECT,
     });

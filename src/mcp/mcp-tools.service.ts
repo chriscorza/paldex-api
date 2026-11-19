@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
@@ -14,6 +14,19 @@ import { DailySalesQueryDto } from '../reports/dto/daily-sales-query.dto';
 import { SalesByEmployeeService } from '../reports/sales-by-employee.service';
 import { SalesByEmployeeQueryDto } from '../reports/dto/sales-by-employee-query.dto';
 import { McpAuthorizationService } from './mcp-authorization.service';
+import { OwnershipContext } from '../common/ownership';
+
+/*
+ * Las dos identidades de una llamada. `userId` es quien llama (autoriza: su rol
+ * y su scope). `ownerUserId` es de quién son los libros: viene de la llave y
+ * jamás de los argumentos de una tool. `null` = llave sin dueño (se rechaza al
+ * escribir); `undefined` = no hay llave (JWT de pruebas): se actúa como uno mismo.
+ */
+export interface ToolCaller {
+  userId: number;
+  keyId?: number;
+  ownerUserId?: number | null;
+}
 
 /*
  * El registro completo de tools. Cada una espeja un endpoint REST y pide el
@@ -35,7 +48,61 @@ export class McpToolsService {
     private readonly mcpAuthorizationService: McpAuthorizationService,
   ) {}
 
-  buildServer(userId: number): McpServer {
+  private readonly logger = new Logger(McpToolsService.name);
+
+  /*
+   * Cada tool pasa por aquí: autoriza con el rol del LLAMANTE, arma el contexto
+   * con el propietario efectivo de la llave, rechaza escribir sin dueño y emite
+   * una línea de log estructurada por llamada (D4: sin tabla nueva).
+   */
+  private async run(
+    caller: ToolCaller,
+    tool: string,
+    permission: string,
+    isWrite: boolean,
+    fn: (ctx: OwnershipContext) => Promise<unknown>,
+  ) {
+    const log = (outcome: string, row_id?: unknown) =>
+      this.logger.log(
+        JSON.stringify({
+          tool,
+          key_id: caller.keyId ?? null,
+          caller_user_id: caller.userId,
+          owner_user_id: caller.ownerUserId ?? null,
+          outcome,
+          row_id: row_id ?? null,
+        }),
+      );
+    try {
+      const base = await this.mcpAuthorizationService.requireContext(
+        caller.userId,
+        permission,
+      );
+      if (isWrite && caller.ownerUserId === null) {
+        throw new ForbiddenException(
+          `MCP key ${caller.keyId} has no owner_user_id; rebind it (PATCH /mcp-keys/${caller.keyId}) before writing`,
+        );
+      }
+      const ctx: OwnershipContext =
+        caller.ownerUserId == null
+          ? base
+          : { ...base, ownerUserId: caller.ownerUserId };
+      const result = await fn(ctx);
+      log('ok', (result as { id?: unknown } | null)?.id);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+      };
+    } catch (error) {
+      log(`error: ${error instanceof Error ? error.message : 'unknown'}`);
+      throw error;
+    }
+  }
+
+  buildServer(callerOrUserId: number | ToolCaller): McpServer {
+    const caller: ToolCaller =
+      typeof callerOrUserId === 'number'
+        ? { userId: callerOrUserId }
+        : callerOrUserId;
     const server = new McpServer({
       name: 'paldex-mcp',
       version: '1.0.0',
@@ -66,17 +133,10 @@ export class McpToolsService {
           limit: z.number().int().min(1).max(100).optional(),
         },
       },
-      async (args) => {
-        const ctx = await this.mcpAuthorizationService.requireContext(
-          userId,
-          'expense:read',
-        );
-        const result = await this.expensesService.findAll(
-          ctx,
-          args as FilterExpensesDto,
-        );
-        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-      },
+      async (args) =>
+        this.run(caller, 'expenses_list', 'expense:read', false, (ctx) =>
+          this.expensesService.findAll(ctx, args as FilterExpensesDto),
+        ),
     );
 
     server.registerTool(
@@ -100,17 +160,10 @@ export class McpToolsService {
             .describe('Last day of the range, inclusive. Format YYYY-MM-DD.'),
         },
       },
-      async (args) => {
-        const ctx = await this.mcpAuthorizationService.requireContext(
-          userId,
-          'report:read',
-        );
-        const result = await this.dailySalesService.getDailySales(
-          ctx,
-          args as DailySalesQueryDto,
-        );
-        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-      },
+      async (args) =>
+        this.run(caller, 'sales_daily', 'report:read', false, (ctx) =>
+          this.dailySalesService.getDailySales(ctx, args as DailySalesQueryDto),
+        ),
     );
 
     server.registerTool(
@@ -153,17 +206,13 @@ export class McpToolsService {
             ),
         },
       },
-      async (args) => {
-        const ctx = await this.mcpAuthorizationService.requireContext(
-          userId,
-          'report:read',
-        );
-        const result = await this.salesByEmployeeService.getSalesByEmployee(
-          ctx,
-          args as SalesByEmployeeQueryDto,
-        );
-        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-      },
+      async (args) =>
+        this.run(caller, 'sales_by_employee', 'report:read', false, (ctx) =>
+          this.salesByEmployeeService.getSalesByEmployee(
+            ctx,
+            args as SalesByEmployeeQueryDto,
+          ),
+        ),
     );
 
     server.registerTool(
@@ -171,7 +220,7 @@ export class McpToolsService {
       {
         title: 'Create expense',
         description:
-          'Creates a new expense attributed to the caller. Write, OWN-scoped, mirrors POST /expenses.',
+          "Creates a new expense in the books of the account the API key is bound to (owner_user_id), not the agent's own. There is no argument to choose the owner. Write, requires expense:create, mirrors POST /expenses.",
         inputSchema: {
           amount: z.number(),
           concept: z.string().min(1),
@@ -182,24 +231,10 @@ export class McpToolsService {
           vendor: z.string().optional(),
         },
       },
-      async (args) => {
-        /*
-         * ExpensesService.create() always writes user_id: ctx.userId
-         * regardless of ctx.scope (it takes no target-user input at all), so
-         * this is inherently OWN-scoped without needing to override the
-         * resolved scope. ctx.scope still governs which account_id/
-         * category_id the caller may reference, same as POST /expenses.
-         */
-        const ctx = await this.mcpAuthorizationService.requireContext(
-          userId,
-          'expense:create',
-        );
-        const result = await this.expensesService.create(
-          ctx,
-          args as CreateExpenseDto,
-        );
-        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-      },
+      async (args) =>
+        this.run(caller, 'expense_create', 'expense:create', true, (ctx) =>
+          this.expensesService.create(ctx, args as CreateExpenseDto),
+        ),
     );
 
     return server;

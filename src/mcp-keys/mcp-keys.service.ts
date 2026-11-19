@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import { PrismaService } from 'src/prisma.service';
 
@@ -37,6 +42,7 @@ const LAST_USED_THROTTLE_MS = 5 * 60 * 1000;
 const PUBLIC_KEY_SELECT = {
   id: true,
   user_id: true,
+  owner_user_id: true,
   name: true,
   token_prefix: true,
   last_used_at: true,
@@ -48,6 +54,8 @@ const PUBLIC_KEY_SELECT = {
 export interface VerifiedKey {
   id: number;
   user_id: number;
+  /** Cuyos libros toca la llave. `null` = llave sin dueño: se rechaza al escribir. */
+  owner_user_id: number | null;
   email: string;
 }
 
@@ -73,7 +81,16 @@ export class McpKeysService {
     name: string;
     expiresAt?: string | null;
     createdBy: number;
+    ownerUserId?: number;
   }) {
+    /*
+     * El valor por omisión se resuelve aquí, al crear, y no al llamar: una llave
+     * nunca nace sin dueño, y en la ruta de petición no hay fallback que esconda
+     * justo el error que esto existe para evitar.
+     */
+    const ownerUserId = params.ownerUserId ?? params.createdBy;
+    await this.assertActiveOwner(ownerUserId);
+
     const prefix = randomBytes(PREFIX_BYTES).toString('hex');
     const secret = randomBytes(SECRET_BYTES).toString('base64url');
 
@@ -85,6 +102,7 @@ export class McpKeysService {
         token_hash: this.hash(secret),
         expires_at: params.expiresAt ? new Date(params.expiresAt) : null,
         created_by: params.createdBy,
+        owner_user_id: ownerUserId,
       },
       select: PUBLIC_KEY_SELECT,
     });
@@ -119,6 +137,7 @@ export class McpKeysService {
       select: {
         id: true,
         user_id: true,
+        owner_user_id: true,
         token_hash: true,
         revoked_at: true,
         expires_at: true,
@@ -139,7 +158,12 @@ export class McpKeysService {
 
     this.touch(key.id, key.last_used_at);
 
-    return { id: key.id, user_id: key.user_id, email: key.user.email };
+    return {
+      id: key.id,
+      user_id: key.user_id,
+      owner_user_id: key.owner_user_id,
+      email: key.user.email,
+    };
   }
 
   private secretMatches(secret: string, storedHash: string): boolean {
@@ -172,6 +196,46 @@ export class McpKeysService {
           error,
         ),
       );
+  }
+
+  /*
+   * El dueño existe y no está dado de baja. «Activo» aquí = el usuario existe y su
+   * invitación, si la tiene, no está REVOCADA (el admin del bootstrap no tiene
+   * invitación y cuenta como activo). Rechaza con el id en el mensaje.
+   */
+  private async assertActiveOwner(ownerUserId: number): Promise<void> {
+    const owner = await this.prisma.user.findUnique({
+      where: { id: ownerUserId },
+      select: { id: true, invitation: { select: { status: true } } },
+    });
+    if (!owner) {
+      throw new BadRequestException(
+        `owner_user_id ${ownerUserId}: el usuario no existe`,
+      );
+    }
+    if (owner.invitation?.status === 'REVOKED') {
+      throw new BadRequestException(
+        `owner_user_id ${ownerUserId}: el usuario no está activo (invitación revocada)`,
+      );
+    }
+  }
+
+  /*
+   * Re-enlazar la llave a otra persona. Cambia a la vez lo que lee y lo que
+   * escribe, porque ambos son «actuar en nombre de esa cuenta».
+   */
+  async setOwner(id: number, ownerUserId: number) {
+    const existing = await this.prisma.mcpApiKey.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`MCP API key with id ${id} not found`);
+    }
+    await this.assertActiveOwner(ownerUserId);
+
+    return this.prisma.mcpApiKey.update({
+      where: { id },
+      data: { owner_user_id: ownerUserId },
+      select: PUBLIC_KEY_SELECT,
+    });
   }
 
   findAll(userId?: number) {

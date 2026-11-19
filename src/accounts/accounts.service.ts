@@ -14,7 +14,11 @@ import {
   AccountDetail,
   AccountEntity,
 } from './entities/account.entity';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+} from '../common/ownership';
 
 @Injectable()
 export class AccountsService {
@@ -53,8 +57,8 @@ export class AccountsService {
           select:
             ctx.scope === 'OWN'
               ? {
-                  incomes: { where: { user_id: ctx.userId } },
-                  expenses: { where: { user_id: ctx.userId } },
+                  incomes: { where: { user_id: effectiveOwnerId(ctx) } },
+                  expenses: { where: { user_id: effectiveOwnerId(ctx) } },
                 }
               : { incomes: true, expenses: true },
         },
@@ -86,7 +90,7 @@ export class AccountsService {
         currency: dto.currency ?? 'MXN',
         is_active: dto.is_active ?? true,
         initial_balance: dto.initial_balance ?? dto.balance,
-        user_id: ctx.userId,
+        user_id: effectiveOwnerId(ctx),
       },
     });
     return new AccountEntity(account);
@@ -160,8 +164,8 @@ export class AccountsService {
           select:
             ctx.scope === 'OWN'
               ? {
-                  incomes: { where: { user_id: ctx.userId } },
-                  expenses: { where: { user_id: ctx.userId } },
+                  incomes: { where: { user_id: effectiveOwnerId(ctx) } },
+                  expenses: { where: { user_id: effectiveOwnerId(ctx) } },
                 }
               : { incomes: true, expenses: true },
         },

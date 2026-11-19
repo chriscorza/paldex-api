@@ -14,7 +14,11 @@ import {
   RecurringExpenseEntity,
   RECURRING_SELECT,
 } from './entities/recurring-expense.entity';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+} from '../common/ownership';
 import { calculateDueDates, Frequency } from '../payroll/payroll-schedule';
 import { CloseGuard } from '../monthly-close/close-guard';
 import { Prisma as PrismaClient } from '@prisma/client';
@@ -84,7 +88,7 @@ export class RecurringExpensesService {
           invoice_status: dto.invoice_status ?? 'NOT_INVOICED',
           tax_rate: dto.tax_rate ?? null,
           notes: dto.notes ?? null,
-          user_id: ctx.userId,
+          user_id: effectiveOwnerId(ctx),
         },
         select: RECURRING_SELECT,
       }),
@@ -170,10 +174,13 @@ export class RecurringExpensesService {
           dto.already_paid === true && dd.scheduled_due_date <= new Date();
 
         try {
-          await this.closeGuard.ensureOpen(ctx.userId, dd.scheduled_due_date);
+          await this.closeGuard.ensureOpen(
+            effectiveOwnerId(ctx),
+            dd.scheduled_due_date,
+          );
           await this.prisma.expense.create({
             data: {
-              user_id: ctx.userId,
+              user_id: effectiveOwnerId(ctx),
               amount: tpl.amount,
               concept: tpl.concept,
               date: dd.scheduled_due_date,

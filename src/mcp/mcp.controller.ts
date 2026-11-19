@@ -33,7 +33,23 @@ export class McpController {
     @Res() res: Response,
     @CurrentUser() user: { id: number; email: string },
   ) {
-    const server = this.mcpToolsService.buildServer(user.id);
+    /*
+     * Dos identidades, resueltas una vez por petición: `user.id` autoriza (el
+     * rol del agente) y `apiKey.owner_user_id` decide de quién son los libros.
+     * Las tools no pueden elegir: el dueño sale de la llave, no de los argumentos.
+     */
+    const apiKey = (
+      req as Request & {
+        apiKey?: { id: number; owner_user_id: number | null };
+      }
+    ).apiKey;
+    const server = this.mcpToolsService.buildServer({
+      userId: user.id,
+      ...(apiKey && {
+        keyId: apiKey.id,
+        ownerUserId: apiKey.owner_user_id,
+      }),
+    });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });

@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Delete,
+  Patch,
   Body,
   Param,
   Query,
@@ -17,6 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { McpKeysService } from './mcp-keys.service';
 import { CreateMcpKeyDto } from './dto/create-mcp-key.dto';
+import { UpdateMcpKeyDto } from './dto/update-mcp-key.dto';
 import { McpKeyEntity, CreatedMcpKeyEntity } from './entities/mcp-key.entity';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -53,6 +55,7 @@ export class McpKeysController {
       name: dto.name,
       expiresAt: dto.expires_at,
       createdBy: user.id,
+      ownerUserId: dto.owner_user_id,
     });
 
     return new CreatedMcpKeyEntity(created as CreatedMcpKeyEntity);
@@ -72,6 +75,24 @@ export class McpKeysController {
       userId ? parseInt(userId, 10) : undefined,
     );
     return rows.map((row) => new McpKeyEntity(row as McpKeyEntity));
+  }
+
+  @Patch(':id')
+  @RequirePermissions('mcp_key:update')
+  @ApiOperation({
+    summary: 'Re-enlazar una API key a otra cuenta dueña de los libros',
+    description:
+      'Cambia `owner_user_id`: lee y escribe en los libros de esa cuenta desde la siguiente ' +
+      'petición. No cambia lo que la llave puede hacer (eso lo da el rol de `user_id`). ' +
+      'El usuario debe existir y estar activo. Una llave no puede llamar este endpoint.',
+  })
+  @ApiOkResponse({ type: McpKeyEntity })
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateMcpKeyDto,
+  ) {
+    const updated = await this.mcpKeysService.setOwner(id, dto.owner_user_id);
+    return new McpKeyEntity(updated as unknown as McpKeyEntity);
   }
 
   @Delete(':id')

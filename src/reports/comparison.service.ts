@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ReportsAggregationService } from './reports-aggregation.service';
 import { ProfitEngine } from './profit-engine.service';
-import { OwnershipContext } from '../common/ownership';
+import { OwnershipContext, effectiveOwnerId } from '../common/ownership';
 import { currentMonthInZone, monthRangeInZone } from '../common/timezone';
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -35,7 +35,11 @@ export class ComparisonService {
 
       const snapshot = await this.prisma.monthlyClose.findUnique({
         where: {
-          user_id_year_month: { user_id: ctx.userId, year: y, month: m },
+          user_id_year_month: {
+            user_id: effectiveOwnerId(ctx),
+            year: y,
+            month: m,
+          },
         },
       });
 
@@ -127,7 +131,11 @@ export class ComparisonService {
 
       const snapshot = await this.prisma.monthlyClose.findUnique({
         where: {
-          user_id_year_month: { user_id: ctx.userId, year: y, month: m },
+          user_id_year_month: {
+            user_id: effectiveOwnerId(ctx),
+            year: y,
+            month: m,
+          },
         },
       });
 

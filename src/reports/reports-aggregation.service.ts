@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ReportAggregates } from './profit-engine.service';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+} from '../common/ownership';
 import { Prisma as PrismaClient } from '@prisma/client';
 const Decimal = PrismaClient.Decimal;
 
@@ -51,7 +55,9 @@ export class ReportsAggregationService {
         _sum: { total_cost: true },
       }),
       this.prisma.expenseCategory.findMany({
-        where: { OR: [{ user_id: ctx.userId }, { is_system: true }] },
+        where: {
+          OR: [{ user_id: effectiveOwnerId(ctx) }, { is_system: true }],
+        },
         select: {
           id: true,
           type: true,
@@ -253,7 +259,7 @@ export class ReportsAggregationService {
     });
 
     const categories = await this.prisma.expenseCategory.findMany({
-      where: { OR: [{ user_id: ctx.userId }, { is_system: true }] },
+      where: { OR: [{ user_id: effectiveOwnerId(ctx) }, { is_system: true }] },
       select: { id: true, name: true, type: true },
     });
 

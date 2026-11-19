@@ -12,6 +12,7 @@ describe('McpKeysService', () => {
   const storedKey = (overrides: Record<string, unknown> = {}) => ({
     id: 1,
     user_id: 9,
+    owner_user_id: 1,
     token_hash: sha256('elsecreto'),
     revoked_at: null,
     expires_at: null,
@@ -22,6 +23,11 @@ describe('McpKeysService', () => {
 
   beforeEach(async () => {
     prisma = {
+      user: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 5, invitation: { status: 'ACTIVE' } }),
+      },
       mcpApiKey: {
         create: jest.fn(),
         findUnique: jest.fn().mockResolvedValue(null),
@@ -159,6 +165,7 @@ describe('McpKeysService', () => {
       await expect(service.verify('pldx_abc_elsecreto')).resolves.toEqual({
         id: 1,
         user_id: 9,
+        owner_user_id: 1,
         email: 'agente@paldex.local',
       });
       expect(prisma.mcpApiKey.findUnique).toHaveBeenCalledWith(
@@ -267,6 +274,92 @@ describe('McpKeysService', () => {
       await expect(
         service.verify('pldx_abc_elsecreto'),
       ).resolves.not.toBeNull();
+    });
+  });
+
+  describe('dueño de los libros (owner_user_id)', () => {
+    beforeEach(() => {
+      prisma.mcpApiKey.create.mockImplementation(({ data }: any) =>
+        Promise.resolve({ id: 1, token_prefix: data.token_prefix }),
+      );
+    });
+
+    it('sin owner_user_id, se guarda el usuario que la crea (al crear, no al llamar)', async () => {
+      await service.create({ userId: 9, name: 'a', createdBy: 5 });
+
+      expect(prisma.mcpApiKey.create.mock.calls[0][0].data.owner_user_id).toBe(
+        5,
+      );
+    });
+
+    it('con owner_user_id explícito, se guarda ése', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 7, invitation: null });
+
+      await service.create({
+        userId: 9,
+        name: 'a',
+        createdBy: 5,
+        ownerUserId: 7,
+      });
+
+      expect(prisma.mcpApiKey.create.mock.calls[0][0].data.owner_user_id).toBe(
+        7,
+      );
+    });
+
+    it('rechaza un dueño que no existe, nombrando el id, y no crea nada', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.create({ userId: 9, name: 'a', createdBy: 5, ownerUserId: 77 }),
+      ).rejects.toThrow(/77/);
+      expect(prisma.mcpApiKey.create).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un dueño con la invitación revocada', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 7,
+        invitation: { status: 'REVOKED' },
+      });
+
+      await expect(
+        service.create({ userId: 9, name: 'a', createdBy: 5, ownerUserId: 7 }),
+      ).rejects.toThrow(/7.*activo/);
+    });
+
+    it('re-enlazar valida al dueño y actualiza sólo owner_user_id', async () => {
+      prisma.mcpApiKey.findUnique.mockResolvedValue({ id: 1 });
+      prisma.user.findUnique.mockResolvedValue({ id: 3, invitation: null });
+
+      await service.setOwner(1, 3);
+
+      expect(prisma.mcpApiKey.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 1 },
+          data: { owner_user_id: 3 },
+        }),
+      );
+    });
+
+    it('re-enlazar a un usuario inexistente o inactivo falla sin tocar la llave', async () => {
+      prisma.mcpApiKey.findUnique.mockResolvedValue({ id: 1 });
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.setOwner(1, 99)).rejects.toThrow(/99/);
+      expect(prisma.mcpApiKey.update).not.toHaveBeenCalled();
+    });
+
+    it('re-enlazar una llave inexistente da 404', async () => {
+      prisma.mcpApiKey.findUnique.mockResolvedValue(null);
+
+      await expect(service.setOwner(5, 3)).rejects.toThrow(/not found/);
+    });
+
+    it('el listado proyecta owner_user_id', async () => {
+      await service.findAll();
+
+      const select = prisma.mcpApiKey.findMany.mock.calls[0][0].select;
+      expect(select.owner_user_id).toBe(true);
     });
   });
 

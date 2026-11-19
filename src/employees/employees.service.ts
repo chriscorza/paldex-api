@@ -15,7 +15,11 @@ import {
   EMPLOYEE_PUBLIC_SELECT,
   parseSalesDays,
 } from './entities/employee.entity';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+} from '../common/ownership';
 import { PayFrequency, Prisma } from '@prisma/client';
 import { startOfDayInZone, endOfDayInZone } from '../common/timezone';
 
@@ -81,7 +85,11 @@ export class EmployeesService {
      */
     const employee = await this.prisma.$transaction(async (tx) => {
       if (active && dto.sales_days?.length) {
-        await this.validateSalesDaysExclusivity(tx, ctx.userId, dto.sales_days);
+        await this.validateSalesDaysExclusivity(
+          tx,
+          effectiveOwnerId(ctx),
+          dto.sales_days,
+        );
       }
 
       return tx.employee.create({
@@ -105,7 +113,7 @@ export class EmployeesService {
            */
           ended_at: dto.ended_at ? endOfDayInZone(dto.ended_at) : null,
           active,
-          user_id: ctx.userId,
+          user_id: effectiveOwnerId(ctx),
           sales_days: dto.sales_days ?? Prisma.DbNull,
         },
         select: EMPLOYEE_PUBLIC_SELECT,

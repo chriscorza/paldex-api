@@ -20,7 +20,13 @@ import {
   buildPagination,
   paginatedResponse,
 } from '../common/filters';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  buildWriteTargetFilter,
+  effectiveOwnerId,
+  isDelegated,
+} from '../common/ownership';
 import { startOfDayInZone } from '../common/timezone';
 
 @Injectable()
@@ -95,7 +101,7 @@ export class ExpensesService {
     try {
       const expense = await this.prisma.expense.create({
         data: {
-          user_id: ctx.userId,
+          user_id: effectiveOwnerId(ctx),
           amount: dto.amount,
           concept: dto.concept,
           date: startOfDayInZone(dto.date),
@@ -331,7 +337,7 @@ export class ExpensesService {
   ): Promise<void> {
     if (account_id !== undefined) {
       const accountWhere: Prisma.AccountWhereInput = { id: account_id };
-      if (ctx.scope === 'OWN') accountWhere.user_id = ctx.userId;
+      Object.assign(accountWhere, buildWriteTargetFilter(ctx));
       const account = await this.prisma.account.findFirst({
         where: accountWhere,
       });
@@ -353,8 +359,8 @@ export class ExpensesService {
 
     if (category_id !== undefined && category_id !== null) {
       const catWhere: any = { id: category_id };
-      if (ctx.scope === 'OWN') {
-        catWhere.OR = [{ user_id: ctx.userId }, { is_system: true }];
+      if (ctx.scope === 'OWN' || isDelegated(ctx)) {
+        catWhere.OR = [{ user_id: effectiveOwnerId(ctx) }, { is_system: true }];
       }
       const category = await this.prisma.expenseCategory.findFirst({
         where: catWhere,
