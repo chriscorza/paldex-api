@@ -23,6 +23,12 @@ import { InventoryCostReportEntity } from './entities/inventory-cost.entity';
 import { DailySalesService } from './daily-sales.service';
 import { DailySalesQueryDto } from './dto/daily-sales-query.dto';
 import { DailySalesReportEntity } from './entities/daily-sales.entity';
+import { IncomeStatementService } from './income-statement.service';
+import {
+  IncomeStatementExportQueryDto,
+  IncomeStatementQueryDto,
+} from './dto/income-statement-query.dto';
+import { IncomeStatementEntity } from './entities/income-statement.entity';
 import { InventoryValuationService } from '../inventory/inventory-valuation.service';
 import { InventoryValuationQueryDto } from '../inventory/dto/inventory-valuation-query.dto';
 import { InventoryValuationReportEntity } from '../inventory/entities/inventory-valuation.entity';
@@ -50,7 +56,68 @@ export class ReportsController {
     private readonly inventoryCostService: InventoryCostService,
     private readonly inventoryValuationService: InventoryValuationService,
     private readonly dailySalesService: DailySalesService,
+    private readonly incomeStatementService: IncomeStatementService,
   ) {}
+
+  @Get('income-statement')
+  @ApiOperation({
+    summary: 'Estado de resultados (P&L) con EBITDA, por rango de fechas',
+    description:
+      'Base de efectivo, como `GET /reports/monthly`. Ventas netas − costo de ventas = ' +
+      'utilidad bruta; − gastos de operación − nómina (neto pagado + PAYROLL_TAX) = EBITDA; ' +
+      '− depreciación y amortización (activos fijos) = EBIT; − intereses ± baja de activos = ' +
+      'utilidad antes de impuestos; − ISR = utilidad neta. ' +
+      'El IVA, las compras de activos (CAPEX) e inventario, el pago de capital y los movimientos ' +
+      'del dueño no son gasto: van en `cash_items`. ' +
+      'Rango obligatorio, sin periodo por omisión, de hasta 366 días. ' +
+      'Ventas netas y COGS cuadran con `GET /reports/monthly` para el mismo mes; su utilidad ' +
+      'neta no, porque aquél resta el IVA como impuesto.',
+  })
+  @ApiOkResponse({ type: IncomeStatementEntity })
+  async incomeStatement(
+    @CurrentUser() user: { id: number },
+    @Req() request: any,
+    @Query() query: IncomeStatementQueryDto,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: (request as any).permissionScope || 'OWN',
+    };
+    return this.incomeStatementService.getIncomeStatement(ctx, query);
+  }
+
+  @Get('income-statement/export')
+  @ApiOperation({
+    summary: 'Exportar el estado de resultados a CSV',
+    description:
+      'Los mismos renglones que `GET /reports/income-statement`, aplanados.',
+  })
+  async exportIncomeStatement(
+    @CurrentUser() user: { id: number },
+    @Req() request: any,
+    @Res() res: any,
+    @Query() query: IncomeStatementExportQueryDto,
+  ) {
+    const ctx: OwnershipContext = {
+      userId: user.id,
+      scope: (request as any).permissionScope || 'OWN',
+    };
+    const statement = await this.incomeStatementService.getIncomeStatement(
+      ctx,
+      { start_date: query.start_date, end_date: query.end_date },
+    );
+    const csv = this.incomeStatementService
+      .toCsvRows(statement)
+      .map((row) => row.map((field) => escapeCsvField(field)).join(','))
+      .join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="estado-de-resultados-${statement.period.start_date}_${statement.period.end_date}.csv"`,
+    );
+    res.send(csv);
+  }
 
   @Get('sales-daily')
   @ApiOperation({

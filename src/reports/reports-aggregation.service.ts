@@ -206,7 +206,15 @@ export class ReportsAggregationService {
         continue;
       }
 
-      if (category.affects_operating_profit) {
+      /*
+       * INTEREST sale de la operación en el estado de resultados (abajo del
+       * EBIT), pero este reporte no tiene renglón de intereses: sin sumarlo
+       * aquí, pasar "Intereses de deuda" a INTEREST haría que la utilidad
+       * operativa y la neta de este reporte subieran solas. Se queda en la
+       * operación hasta que el reporte mensual se alinee con el estado de
+       * resultados (add-income-statement, design.md decisión 3).
+       */
+      if (category.affects_operating_profit || category.type === 'INTEREST') {
         totals.operating = totals.operating.plus(amount);
       }
 

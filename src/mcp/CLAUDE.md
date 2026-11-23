@@ -13,7 +13,8 @@ written row gets (the key's `owner_user_id`). Two domains have one today:
 - **Payroll** — `payroll_create` (`payroll:create`), `payroll_pay` (`payroll:update`). Payroll
   **taxes** (`TaxPaymentType.PAYROLL_TAX`) are *not* payroll for this purpose and stay unreachable.
 
-Every other domain is read-only. The registry test in `mcp-tools.service.spec.ts` enumerates every
+Every other domain is read-only — fixed assets included: the agent can read the income statement
+(depreciation comes from them) but cannot create, edit or dispose of an asset. The registry test in `mcp-tools.service.spec.ts` enumerates every
 tool **and every write tool** explicitly, so adding one without touching the test fails the build.
 (History: `add-mcp-daily-sales` froze writes after `expense_create`; `add-mcp-payroll-payments`
 replaced "never again" with this policy.)
@@ -29,6 +30,7 @@ a 400 pointing to `POST /payroll`; see `src/payroll/CLAUDE.md`.
 | `expenses_list` | `GET /expenses` | `expense:read` | scope-aware (`OWN`/`ANY`) |
 | `sales_daily` | `GET /reports/sales-daily` | `report:read` | scope-aware (`OWN`/`ANY`) |
 | `sales_by_employee` | `GET /reports/sales-by-employee` | `report:read` | scope-aware (`OWN`/`ANY`) |
+| `income_statement` | `GET /reports/income-statement` | `report:read` | scope-aware (`OWN`/`ANY`); `start_date`/`end_date` required |
 | `expense_create` | `POST /expenses` | `expense:create` | attributes to the key's `owner_user_id` |
 | `payroll_list` | `GET /payroll` | `payroll:read` | scope-aware; `start_date`/`end_date` required |
 | `payroll_create` | `POST /payroll` | `payroll:create` | employee must belong to the key's owner; always `PENDING` |

@@ -18,6 +18,30 @@ Este archivo es la **fuente de verdad de la versión del producto**: la entrada 
 reciente es la versión vigente, y `package.json` debe coincidir con ella. Hay una
 prueba que falla si se separan.
 
+## [1.3.0] - 2026-11-23
+
+### Added
+
+- Estado de resultados con EBITDA, en Reportes, para cualquier periodo de hasta un año: ventas
+  netas, costo de ventas, utilidad bruta, gastos de operación, nómina, EBITDA, depreciación,
+  utilidad operativa, intereses, utilidad antes de impuestos, ISR y utilidad neta, con el margen
+  de cada una. Se puede descargar en CSV y el asistente de IA también lo puede consultar.
+- Lo que sale de la cuenta pero no es gasto (el IVA que se entera al SAT, las compras de equipo,
+  las compras de mercancía, el pago de capital de préstamos y los retiros del dueño) aparece
+  aparte, para que se vea que no se perdió nada.
+- Registro de activos fijos: computadoras, mobiliario, vehículos, adaptaciones al local o
+  software. Se captura cada uno una vez y Paldex reparte su costo mes a mes según su vida útil
+  (propone la del SAT), en vez de restarlo completo el mes de la compra. Se puede dar de baja un
+  activo vendido o roto, y la ganancia o pérdida aparece en el estado de resultados.
+- Categoría de gasto "Compra de activo fijo". Si ya habías registrado la compra de un equipo como
+  otro gasto, cámbiala a esta categoría al dar de alta el activo; si no, se contaría dos veces.
+- En la credencial del asistente se puede elegir en los libros de qué cuenta registra lo que hace.
+
+### Changed
+
+- Los intereses de préstamos tienen su propia categoría y en el estado de resultados se restan
+  después de la utilidad operativa. El reporte mensual sigue mostrando los mismos números.
+
 ## [1.2.0] - 2026-08-25
 
 ### Changed

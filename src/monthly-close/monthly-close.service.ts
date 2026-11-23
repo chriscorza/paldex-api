@@ -15,6 +15,10 @@ import { ListMonthlyCloseDto } from './dto/list-monthly-close.dto';
 import { ReportsAggregationService } from '../reports/reports-aggregation.service';
 import { ProfitEngine } from '../reports/profit-engine.service';
 import { Prisma as PrismaClient } from '@prisma/client';
+import {
+  depreciationInRange,
+  disposalResult,
+} from '../fixed-assets/depreciation';
 const Decimal = PrismaClient.Decimal;
 
 const FINGERPRINT_VERSION = 1;
@@ -318,8 +322,16 @@ export class MonthlyCloseService {
       'payroll_payments',
       'tax_payments',
       'cost_of_goods_sold',
+      'fixed_assets',
     ];
     for (const table of tables) {
+      /*
+       * `fixed_assets` llegó después que la versión 1 del fingerprint. Un cierre
+       * guardado antes no lo trae: se compara el resto en vez de subir la
+       * versión, que dejaría todos los meses ya cerrados en
+       * UNKNOWN_FINGERPRINT_VERSION sin que nada haya cambiado.
+       */
+      if (!(table in stored)) continue;
       if (JSON.stringify(stored[table]) !== JSON.stringify(current[table])) {
         return {
           status: 'DIVERGED',
@@ -382,7 +394,33 @@ export class MonthlyCloseService {
       _count: true,
     });
 
+    /*
+     * Los activos no tienen fecha dentro del mes: lo que toca al mes es su
+     * depreciación y, si se dieron de baja ese mes, su resultado. Se toma ese
+     * efecto en vez de los campos del activo, así que editar un activo sólo
+     * desactualiza los meses cuya depreciación cambia de verdad.
+     */
+    const assets = await this.prisma.fixedAsset.findMany({ where: { ...of } });
+    let assetsTouching = 0;
+    let assetsEffect = new Decimal(0);
+    for (const asset of assets) {
+      const depreciation = depreciationInRange(asset, startDate, endDate);
+      const disposedInMonth =
+        asset.disposed_at &&
+        asset.disposed_at >= startDate &&
+        asset.disposed_at <= endDate;
+      const result = disposedInMonth ? disposalResult(asset) : null;
+      if (depreciation.isZero() && !result) continue;
+      assetsTouching += 1;
+      assetsEffect = assetsEffect.plus(depreciation);
+      if (result) assetsEffect = assetsEffect.plus(result);
+    }
+
     return {
+      fixed_assets: {
+        count: assetsTouching,
+        sum: assetsEffect.toString(),
+      },
       expenses: {
         count: expenses._count,
         sum: expenses._sum.amount?.toString() ?? '0',

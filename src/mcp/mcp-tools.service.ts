@@ -11,6 +11,8 @@ import { FilterExpensesDto } from '../expenses/dto/filter-expenses.dto';
 import { CreateExpenseDto } from '../expenses/dto/create-expense.dto';
 import { DailySalesService } from '../reports/daily-sales.service';
 import { DailySalesQueryDto } from '../reports/dto/daily-sales-query.dto';
+import { IncomeStatementService } from '../reports/income-statement.service';
+import { IncomeStatementQueryDto } from '../reports/dto/income-statement-query.dto';
 import { SalesByEmployeeService } from '../reports/sales-by-employee.service';
 import { SalesByEmployeeQueryDto } from '../reports/dto/sales-by-employee-query.dto';
 import { PayrollService } from '../payroll/payroll.service';
@@ -54,6 +56,7 @@ export class McpToolsService {
   constructor(
     private readonly expensesService: ExpensesService,
     private readonly dailySalesService: DailySalesService,
+    private readonly incomeStatementService: IncomeStatementService,
     private readonly salesByEmployeeService: SalesByEmployeeService,
     private readonly payrollService: PayrollService,
     private readonly mcpAuthorizationService: McpAuthorizationService,
@@ -174,6 +177,39 @@ export class McpToolsService {
       async (args) =>
         this.run(caller, 'sales_daily', 'report:read', false, (ctx) =>
           this.dailySalesService.getDailySales(ctx, args as DailySalesQueryDto),
+        ),
+    );
+
+    server.registerTool(
+      'income_statement',
+      {
+        title: 'Income statement (P&L) with EBITDA',
+        description:
+          'Cash-basis income statement over a date range: net sales − cost of sales = ' +
+          'gross profit; − operating expenses − payroll (net paid + payroll taxes) = EBITDA; ' +
+          '− depreciation and amortization of fixed assets = EBIT; − interest ± gains/losses ' +
+          'on disposed assets = pre-tax income; − income tax (ISR) = net income. Margins are ' +
+          'over net sales. VAT, asset purchases, inventory purchases, debt principal and owner ' +
+          'withdrawals are not expenses and come in `cash_items`. Check `quality`: with ' +
+          'incomplete cost data, gross profit and everything below it is a ceiling. Read-only, ' +
+          'mirrors GET /reports/income-statement. Both dates are required — there is no ' +
+          'default period, so resolve what the user meant and pass explicit dates. Maximum ' +
+          'range is 366 days.',
+        inputSchema: {
+          start_date: z
+            .string()
+            .describe('First day of the range, inclusive. Format YYYY-MM-DD.'),
+          end_date: z
+            .string()
+            .describe('Last day of the range, inclusive. Format YYYY-MM-DD.'),
+        },
+      },
+      async (args) =>
+        this.run(caller, 'income_statement', 'report:read', false, (ctx) =>
+          this.incomeStatementService.getIncomeStatement(
+            ctx,
+            args as IncomeStatementQueryDto,
+          ),
         ),
     );
 

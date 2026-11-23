@@ -5,6 +5,7 @@ import { McpToolsService, ToolCaller } from './mcp-tools.service';
 import { McpAuthorizationService } from './mcp-authorization.service';
 import { ExpensesService } from '../expenses/expenses.service';
 import { DailySalesService } from '../reports/daily-sales.service';
+import { IncomeStatementService } from '../reports/income-statement.service';
 import { SalesByEmployeeService } from '../reports/sales-by-employee.service';
 import { PayrollService } from '../payroll/payroll.service';
 
@@ -17,6 +18,7 @@ import { PayrollService } from '../payroll/payroll.service';
 describe('McpToolsService', () => {
   let expensesService: { findAll: jest.Mock; create: jest.Mock };
   let dailySalesService: { getDailySales: jest.Mock };
+  let incomeStatementService: { getIncomeStatement: jest.Mock };
   let salesByEmployeeService: { getSalesByEmployee: jest.Mock };
   let payrollService: {
     findAll: jest.Mock;
@@ -30,6 +32,7 @@ describe('McpToolsService', () => {
     const toolsService = new McpToolsService(
       expensesService as unknown as ExpensesService,
       dailySalesService as unknown as DailySalesService,
+      incomeStatementService as unknown as IncomeStatementService,
       salesByEmployeeService as unknown as SalesByEmployeeService,
       payrollService as unknown as PayrollService,
       authService as unknown as McpAuthorizationService,
@@ -47,6 +50,7 @@ describe('McpToolsService', () => {
   beforeEach(() => {
     expensesService = { findAll: jest.fn(), create: jest.fn() };
     dailySalesService = { getDailySales: jest.fn() };
+    incomeStatementService = { getIncomeStatement: jest.fn() };
     salesByEmployeeService = { getSalesByEmployee: jest.fn() };
     payrollService = {
       findAll: jest.fn(),
@@ -64,6 +68,7 @@ describe('McpToolsService', () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       'expense_create',
       'expenses_list',
+      'income_statement',
       'payroll_create',
       'payroll_list',
       'payroll_pay',
@@ -118,6 +123,8 @@ describe('McpToolsService', () => {
     }
     const names = tools.map((t) => t.name);
     expect(names).not.toContain('payroll_generate');
+    /* Los activos fijos no tienen política de escritura del agente. */
+    expect(names.filter((n) => /asset/.test(n))).toEqual([]);
     expect(names.filter((n) => /payroll/.test(n)).sort()).toEqual([
       'payroll_create',
       'payroll_list',
@@ -215,6 +222,46 @@ describe('McpToolsService', () => {
       expect.objectContaining({ userId: 9 }),
       expect.anything(),
     );
+  });
+
+  describe('income_statement', () => {
+    it('checks report:read and delegates to IncomeStatementService', async () => {
+      authService.requireContext.mockResolvedValue({ userId: 1, scope: 'OWN' });
+      incomeStatementService.getIncomeStatement.mockResolvedValue({
+        summary: { ebitda: 22000, net_income: 15000 },
+      });
+      await connectClient(1);
+
+      const result = await client.callTool({
+        name: 'income_statement',
+        arguments: { start_date: '2026-04-01', end_date: '2026-04-30' },
+      });
+
+      expect(authService.requireContext).toHaveBeenCalledWith(1, 'report:read');
+      expect(incomeStatementService.getIncomeStatement).toHaveBeenCalledWith(
+        { userId: 1, scope: 'OWN' },
+        expect.objectContaining({
+          start_date: '2026-04-01',
+          end_date: '2026-04-30',
+        }),
+      );
+      const parsed = JSON.parse(
+        (result.content as Array<{ text: string }>)[0].text,
+      );
+      expect(parsed.summary.ebitda).toBe(22000);
+    });
+
+    it('requires both dates — there is no default period', async () => {
+      await connectClient(1);
+
+      const result = await client.callTool({
+        name: 'income_statement',
+        arguments: { start_date: '2026-04-01' },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(incomeStatementService.getIncomeStatement).not.toHaveBeenCalled();
+    });
   });
 
   describe('sales_daily', () => {

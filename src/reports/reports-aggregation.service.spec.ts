@@ -23,10 +23,17 @@ describe('ReportsAggregationService — los gastos entran al P&L', () => {
       affects_operating_profit: true,
     },
     {
+      /* Como queda tras la migración de add-income-statement. */
       id: 11,
-      type: 'DEBT',
+      type: 'INTEREST',
       name: 'Intereses de deuda',
-      affects_operating_profit: true,
+      affects_operating_profit: false,
+    },
+    {
+      id: 15,
+      type: 'CAPEX',
+      name: 'Compra de activo fijo',
+      affects_operating_profit: false,
     },
     {
       id: 12,
@@ -102,6 +109,27 @@ describe('ReportsAggregationService — los gastos entran al P&L', () => {
 
     expect(Number(aggregates.operating_expenses)).toBe(1200);
     expect(Number(aggregates.debt_principal_paid)).toBe(5000);
+  });
+
+  /*
+   * El reporte mensual no tiene renglón de intereses: si dejara de sumarlos a la
+   * operación al pasar a INTEREST, su utilidad subiría sola.
+   */
+  it('sigue restando los intereses en la operación tras pasarlos a INTEREST', async () => {
+    const service = build([{ category_id: 11, _sum: { amount: 1200 } }]);
+
+    const aggregates = await run(service);
+
+    expect(Number(aggregates.operating_expenses)).toBe(1200);
+  });
+
+  /* La compra del activo no es gasto: al P&L entra su depreciación. */
+  it('deja la compra de activo fijo fuera de la operación', async () => {
+    const service = build([{ category_id: 15, _sum: { amount: 30000 } }]);
+
+    const aggregates = await run(service);
+
+    expect(Number(aggregates.operating_expenses)).toBe(0);
   });
 
   it('distingue el retiro del dueño de la reinversión', async () => {

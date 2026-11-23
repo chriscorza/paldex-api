@@ -72,6 +72,19 @@ const DEFAULT_FLAGS: Record<
     affects_operating_profit: true,
     is_cash_outflow: true,
   },
+  /* Abajo del EBIT en el estado de resultados: fuera del EBITDA. */
+  INTEREST: {
+    affects_gross_profit: false,
+    affects_operating_profit: false,
+    is_cash_outflow: true,
+  },
+  /* Compra de activo fijo: sale dinero pero no es gasto; al P&L entra su
+     depreciación, calculada desde FixedAsset. */
+  CAPEX: {
+    affects_gross_profit: false,
+    affects_operating_profit: false,
+    is_cash_outflow: true,
+  },
 };
 
 const SYSTEM_CATEGORIES: {
@@ -89,16 +102,13 @@ const SYSTEM_CATEGORIES: {
   { name: 'Devolución de envío', type: 'SHIPPING' },
   { name: 'Meta Ads', type: 'MARKETING' },
   { name: 'Google Ads', type: 'MARKETING' },
-  {
-    name: 'Intereses de deuda',
-    type: 'DEBT',
-    overrides: { affects_operating_profit: true },
-  },
+  { name: 'Intereses de deuda', type: 'INTEREST' },
   {
     name: 'Pago de capital de deuda',
     type: 'DEBT',
     overrides: { affects_operating_profit: false },
   },
+  { name: 'Compra de activo fijo', type: 'CAPEX' },
   { name: 'Retiro del dueño', type: 'OWNER' },
   { name: 'Reinversión', type: 'OWNER' },
   { name: 'Honorarios contador', type: 'TAX' },

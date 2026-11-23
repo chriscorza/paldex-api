@@ -5,6 +5,7 @@ import { McpToolsService, ToolCaller } from './mcp-tools.service';
 import { McpAuthorizationService } from './mcp-authorization.service';
 import { ExpensesService } from '../expenses/expenses.service';
 import { DailySalesService } from '../reports/daily-sales.service';
+import { IncomeStatementService } from '../reports/income-statement.service';
 import { PayrollService } from '../payroll/payroll.service';
 import { SalesByEmployeeService } from '../reports/sales-by-employee.service';
 
@@ -113,6 +114,7 @@ describe('MCP write attribution (fix-mcp-write-attribution)', () => {
     const tools = new McpToolsService(
       new ExpensesService(prisma),
       {} as unknown as DailySalesService,
+      {} as unknown as IncomeStatementService,
       {} as unknown as SalesByEmployeeService,
       new PayrollService(prisma),
       authService as unknown as McpAuthorizationService,

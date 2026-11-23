@@ -86,11 +86,12 @@ All monetary columns in the schema use `Decimal(14,2)`. The API always returns *
 
 ## No-duplication rules
 
-Three rules prevent double-counting in financial reports:
+Four rules prevent double-counting in financial reports:
 
 1. **Payroll**: `PayrollPayment` is the single source of truth for payroll. Paying payroll **must not** create `Expense` rows. The report projects `PayrollPayment` directly.
 2. **Taxes**: `TaxPayment` is the single source of truth for tax payments (IVA/ISR). Paying taxes **must not** create `Expense` rows.
 3. **COGS**: The COGS line in reports comes **exclusively** from `CostOfGoodsSold` linked to `Income`. An `Expense` of category type `COGS` represents inventory purchases, shown in a separate `inventory_purchases` line — it does not contribute to COGS.
+4. **Fixed assets**: Buying an asset is an `Expense` in a `CAPEX` category — cash out, never a P&L expense. What hits the income statement is its depreciation, computed from `FixedAsset`. An asset purchase left in any other category is counted twice (expense + depreciation); `POST /fixed-assets` refuses an `expense_id` that is not `CAPEX`.
 
 ## Report date ranges and time zone
 
@@ -255,6 +256,49 @@ This one values what is **left**.
   on the shelf; not a tax-grade cost of sales.
 - **With more than one Shopify connection**, the report values the most recent snapshot *of each*
   and sums them — taking only the single latest would silently drop the other store's stock.
+
+## Income statement (P&L with EBITDA)
+
+`GET /reports/income-statement?start_date&end_date` (and `/export?format=csv`, and the
+`income_statement` MCP tool) is the cash-basis P&L. Range required, max 366 days, no default.
+
+| Line | Source |
+|---|---|
+| Net sales, COGS, payroll net, cost coverage | `ReportsAggregationService.getMonthlyAggregates` — the same queries as `GET /reports/monthly`, so they reconcile by construction |
+| Cost of sales (beyond COGS) | paid expenses in `SHOPIFY_FEES` / `SHIPPING` (or any category with `affects_gross_profit`) |
+| Operating expenses | paid expenses whose category `affects_operating_profit`, by category, + `TaxPayment` `OTHER` |
+| Payroll | `PayrollPayment.net_amount` paid + `TaxPayment` `PAYROLL_TAX` |
+| **EBITDA** | |
+| D&A | `FixedAsset`, straight line, split by `kind` |
+| **EBIT** | |
+| Interest / other results | expenses in `INTEREST` (or a `DEBT` category flagged `affects_operating_profit`, the old way) / gain-loss on disposals |
+| Income tax | `TaxPayment` `ISR` |
+
+- **Payroll is net + `PAYROLL_TAX`, not `gross_amount`.** Withholdings are inside both `gross_amount`
+  and the `PAYROLL_TAX` payment that remits them; gross + payroll tax would count them twice.
+- **VAT is not an expense.** `IVA` tax payments go to `cash_items.vat_paid`. This is why the income
+  statement's net income does not match `GET /reports/monthly`'s, which subtracts every tax payment.
+- **Every paid expense lands in exactly one line**, P&L or `cash_items` (`classifyExpense`); a test
+  enforces it. `cash_items.other_non_operating` should be zero — if not, a category flags nothing.
+- **The monthly report still subtracts interest in operating expenses** (`sumExpensesByPurpose`
+  adds `INTEREST` to `operating`) so moving "Intereses de deuda" to `INTEREST` did not change its numbers.
+
+## Fixed assets
+
+`/fixed-assets` (`fixed_asset:*`). Depreciation (amortization for `INTANGIBLE`) lives in
+`src/fixed-assets/depreciation.ts` as pure functions — **computed on read, never stored**.
+
+- Straight line, full months, starting the **month after** `in_service_at` (SAT rule, no day
+  proration); the last month absorbs the rounding residue so the total is exactly cost − salvage.
+- Months are counted in the business time zone, like reports.
+- A range gets a month's full quota iff it contains that month's day 1 — so summing months equals
+  asking for the whole range.
+- Disposal stops depreciation from the disposal month; gain/loss = proceeds − book value then.
+- `useful_life_months` is always stored; the class (`asset-classes.ts`, LISR art. 34/33 rates) only
+  proposes it on create.
+- Editing an asset changes closed months: `MonthlyClose`'s fingerprint includes each month's
+  asset effect (`fixed_assets` key, no version bump — closes saved before it skip that key).
+- It is management depreciation for EBITDA, not tax-exact (no INPC, no immediate deduction).
 
 ## Versión del producto y changelog
 

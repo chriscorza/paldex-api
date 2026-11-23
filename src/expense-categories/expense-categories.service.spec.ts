@@ -42,12 +42,12 @@ describe('ExpenseCategoriesService', () => {
   });
 
   describe('seedSystemCategories', () => {
-    it('should upsert 16 system categories (no PAYROLL)', async () => {
+    it('should upsert 17 system categories (no PAYROLL, with CAPEX)', async () => {
       prisma.expenseCategory.upsert.mockResolvedValue({ id: 1 });
 
       await service.seedSystemCategories(1);
 
-      expect(prisma.expenseCategory.upsert).toHaveBeenCalledTimes(16);
+      expect(prisma.expenseCategory.upsert).toHaveBeenCalledTimes(17);
     });
 
     it('should be idempotent (upsert, not insert)', async () => {
@@ -56,7 +56,7 @@ describe('ExpenseCategoriesService', () => {
       await service.seedSystemCategories(1);
       await service.seedSystemCategories(1);
 
-      expect(prisma.expenseCategory.upsert).toHaveBeenCalledTimes(32);
+      expect(prisma.expenseCategory.upsert).toHaveBeenCalledTimes(34);
     });
 
     it('should set is_system: true for all categories', async () => {
