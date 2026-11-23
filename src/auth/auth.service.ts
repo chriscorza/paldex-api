@@ -38,7 +38,12 @@ export class AuthService {
       where: { email },
       select: { id: true, email: true, password: true },
     });
-    if (user?.password !== password) {
+    /*
+     * Un usuario sin contraseña (Google o la cuenta de servicio del asistente)
+     * nunca entra por aquí. LoginDto ya rechaza una contraseña vacía o nula,
+     * pero `null !== null` es falso y no conviene depender sólo del DTO.
+     */
+    if (!user?.password || user.password !== password) {
       throw new UnauthorizedException();
     }
 

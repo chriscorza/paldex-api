@@ -21,14 +21,19 @@ import { TaxesModule } from '../taxes/taxes.module';
 import { McpController } from './mcp.controller';
 import { McpActionsController } from './mcp-actions.controller';
 import { McpToolsInfoController } from './mcp-tools-info.controller';
+import { McpServiceAccountController } from './mcp-service-account.controller';
+import { McpServiceAccountService } from './mcp-service-account.service';
+import { McpKeysModule } from '../mcp-keys/mcp-keys.module';
 import { McpAuthorizationService } from './mcp-authorization.service';
 import { McpToolsService } from './mcp-tools.service';
 import { McpToolkit } from './toolkit';
 
 /*
- * Lo que se importa aquí es exactamente lo que el agente puede alcanzar. Los
- * módulos de la lista negra (usuarios, roles, invitaciones, llaves MCP,
- * Shopify) no se importan a propósito.
+ * Los módulos de dominio que se importan aquí son lo que las tools pueden
+ * alcanzar. Usuarios, roles, invitaciones y Shopify no se importan a propósito.
+ * McpKeysModule sí, pero sólo para el endpoint REST que crea la cuenta del
+ * asistente (POST /mcp-keys/service-account, con JWT y permisos de admin):
+ * ninguna tool lo usa, y la prueba del registro lo vigila.
  */
 @Module({
   imports: [
@@ -51,8 +56,19 @@ import { McpToolkit } from './toolkit';
     ReportsModule,
     TaxPaymentsModule,
     TaxesModule,
+    McpKeysModule,
   ],
-  controllers: [McpController, McpActionsController, McpToolsInfoController],
-  providers: [McpAuthorizationService, McpToolkit, McpToolsService],
+  controllers: [
+    McpController,
+    McpActionsController,
+    McpToolsInfoController,
+    McpServiceAccountController,
+  ],
+  providers: [
+    McpAuthorizationService,
+    McpToolkit,
+    McpToolsService,
+    McpServiceAccountService,
+  ],
 })
 export class McpModule {}

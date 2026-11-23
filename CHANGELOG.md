@@ -18,6 +18,17 @@ Este archivo es la **fuente de verdad de la versión del producto**: la entrada 
 reciente es la versión vigente, y `package.json` debe coincidir con ella. Hay una
 prueba que falla si se separan.
 
+## [1.6.0] - 2026-11-24
+
+### Added
+
+- En la pantalla de credenciales del asistente, el botón "Crear cuenta del asistente" prepara de un
+  clic una cuenta propia para el asistente de IA: un rol con exactamente los permisos que usa, un
+  usuario que no puede iniciar sesión en la app, y una credencial nueva que registra en tus libros.
+  Así el asistente ya no trabaja con los permisos de una persona.
+- La lista de credenciales muestra con qué cuenta trabaja cada una, y marca las que usan una cuenta
+  personal.
+
 ## [1.5.0] - 2026-11-24
 
 ### Added

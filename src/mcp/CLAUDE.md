@@ -105,9 +105,14 @@ The endpoint also accepts a normal JWT, which is what makes it testable by hand,
 the service account a password: a password is permanent, mints fresh tokens forever, and there is
 no endpoint to rotate one. The account's `password` should be left `null`.
 
-The intended caller is a dedicated `ai_agent` system-adjacent role and service-account user
-(created manually via `/roles` and `/user`, not seeded — see design.md "Migration Plan"), holding
-only the permissions the current tool set needs. Never point a human user's JWT at this endpoint
+The intended caller is a dedicated `ai_agent` role and service-account user, holding only the
+permissions the current tool set needs. **`POST /mcp-keys/service-account`** (the "Crear cuenta del
+asistente" button on the credentials screen) sets it up in one call: it creates or reuses the role
+with exactly the registry's permissions in `OWN` scope (only adds, never removes), a service user
+`asistente-ia-<owner>@agente.paldex.local` with no password and no invitation (it cannot sign in;
+`AuthService.signIn` also refuses any user without a password), and a new key bound to the caller's
+books. It requires `mcp_key:create`, `role:create`, `role:update` and `user:assign_role`, and never
+accepts an API key. Never point a human user's JWT at this endpoint
 for anything but testing: the whole point of the `ai_agent` role is that its permissions are the
 actual ceiling on what an AI agent can do here, narrower than what an admin or regular user can.
 
