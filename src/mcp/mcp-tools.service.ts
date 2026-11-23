@@ -1,115 +1,121 @@
-import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
-import { z } from 'zod';
+import { Injectable } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import {
-  ExpenseStatus,
-  InvoiceStatus,
-  ExpenseCategoryType,
-} from '@prisma/client';
+import { PrismaService } from '../prisma.service';
+import { AccountsService } from '../accounts/accounts.service';
+import { CogsService } from '../cogs/cogs.service';
+import { EmployeesService } from '../employees/employees.service';
+import { ExpenseCategoriesService } from '../expense-categories/expense-categories.service';
 import { ExpensesService } from '../expenses/expenses.service';
-import { FilterExpensesDto } from '../expenses/dto/filter-expenses.dto';
-import { CreateExpenseDto } from '../expenses/dto/create-expense.dto';
-import { DailySalesService } from '../reports/daily-sales.service';
-import { DailySalesQueryDto } from '../reports/dto/daily-sales-query.dto';
-import { IncomeStatementService } from '../reports/income-statement.service';
-import { IncomeStatementQueryDto } from '../reports/dto/income-statement-query.dto';
-import { SalesByEmployeeService } from '../reports/sales-by-employee.service';
-import { SalesByEmployeeQueryDto } from '../reports/dto/sales-by-employee-query.dto';
+import { FixedAssetsService } from '../fixed-assets/fixed-assets.service';
+import { IncomesService } from '../incomes/incomes.service';
+import { InventoryValuationService } from '../inventory/inventory-valuation.service';
+import { MonthlyCloseService } from '../monthly-close/monthly-close.service';
+import { PayablesService } from '../payables/payables.service';
 import { PayrollService } from '../payroll/payroll.service';
-import {
-  CreatePayrollPaymentDto,
-  FilterPayrollDto,
-  PayPayrollDto,
-} from '../payroll/dto/payroll.dto';
-import { PayrollStatus } from '@prisma/client';
-import { McpAuthorizationService } from './mcp-authorization.service';
-import { OwnershipContext } from '../common/ownership';
+import { ProductCostsService } from '../product-costs/product-costs.service';
+import { ReceivablesService } from '../receivables/receivables.service';
+import { RecurringExpensesService } from '../recurring-expenses/recurring-expenses.service';
+import { DailySalesService } from '../reports/daily-sales.service';
+import { IncomeStatementService } from '../reports/income-statement.service';
+import { ProfitEngine } from '../reports/profit-engine.service';
+import { ReportsAggregationService } from '../reports/reports-aggregation.service';
+import { SalesByEmployeeService } from '../reports/sales-by-employee.service';
+import { TaxPaymentsService } from '../tax-payments/tax-payments.service';
+import { TaxesService } from '../taxes/taxes.service';
+import { McpToolkit, ToolCaller, ToolDef } from './toolkit';
+import { McpServices } from './tools/services';
+import { defineReportTools } from './tools/reports.tools';
+import { defineExpenseTools } from './tools/expenses.tools';
+import { defineIncomeTools } from './tools/incomes.tools';
+import { defineDebtTools } from './tools/debts.tools';
+import { defineTaxTools } from './tools/taxes.tools';
+import { definePayrollTools } from './tools/payroll.tools';
+import { defineAssetTools } from './tools/assets.tools';
+import { defineConfigTools } from './tools/config.tools';
+
+export type { ToolCaller } from './toolkit';
 
 /*
- * Las dos identidades de una llamada. `userId` es quien llama (autoriza: su rol
- * y su scope). `ownerUserId` es de quién son los libros: viene de la llave y
- * jamás de los argumentos de una tool. `null` = llave sin dueño (se rechaza al
- * escribir); `undefined` = no hay llave (JWT de pruebas): se actúa como uno mismo.
- */
-export interface ToolCaller {
-  userId: number;
-  keyId?: number;
-  ownerUserId?: number | null;
-}
-
-/*
- * El registro completo de tools. Cada una espeja un endpoint REST y pide el
- * mismo permiso que él — la tabla está en src/mcp/CLAUDE.md.
+ * El registro completo de tools. Cada dominio las declara en
+ * `tools/<dominio>.tools.ts` con `McpToolkit.define`, que es lo único que
+ * registra una tool: así ninguna se salta la autorización, la validación con el
+ * DTO de REST ni la bitácora.
  *
- * **Política de escritura.** Una tool que crea, actualiza o borra sólo se agrega
- * junto con una política de escritura del agente para su dominio (quién, con qué
- * permiso, a qué propietario). Hoy hay dos dominios con política: gastos
- * (`expense_create`) y nómina (`payroll_create`, `payroll_pay`). Todo lo demás
- * es de sólo lectura, y la nómina NO incluye impuestos de nómina. Agregar una
- * tool exige actualizar specs/mcp-server/spec.md y el test del registro en
- * mcp-tools.service.spec.ts, que enumera cada tool y cada tool de escritura y
- * mantiene cierta la lista negra (impuestos de nómina, pagos de impuestos,
- * cierre mensual, usuarios/roles, invitaciones, credenciales de Shopify).
+ * Política (expand-mcp-agent): el agente puede leer y escribir en todos los
+ * dominios salvo la lista negra estructural —usuarios, roles y permisos,
+ * invitaciones, llaves MCP, la conexión de Shopify y sus credenciales, cerrar o
+ * reabrir meses, y autenticación—. No hay import de esos servicios en este
+ * módulo: aunque el rol tuviera esos permisos, no hay camino de código hacia
+ * ellos. `mcp-tools.service.spec.ts` enumera cada tool y cada escritura.
  */
 @Injectable()
 export class McpToolsService {
   constructor(
-    private readonly expensesService: ExpensesService,
-    private readonly dailySalesService: DailySalesService,
-    private readonly incomeStatementService: IncomeStatementService,
-    private readonly salesByEmployeeService: SalesByEmployeeService,
-    private readonly payrollService: PayrollService,
-    private readonly mcpAuthorizationService: McpAuthorizationService,
-  ) {}
-
-  private readonly logger = new Logger(McpToolsService.name);
-
-  /*
-   * Cada tool pasa por aquí: autoriza con el rol del LLAMANTE, arma el contexto
-   * con el propietario efectivo de la llave, rechaza escribir sin dueño y emite
-   * una línea de log estructurada por llamada (D4: sin tabla nueva).
-   */
-  private async run(
-    caller: ToolCaller,
-    tool: string,
-    permission: string,
-    isWrite: boolean,
-    fn: (ctx: OwnershipContext) => Promise<unknown>,
+    private readonly toolkit: McpToolkit,
+    prisma: PrismaService,
+    accounts: AccountsService,
+    cogs: CogsService,
+    employees: EmployeesService,
+    expenseCategories: ExpenseCategoriesService,
+    expenses: ExpensesService,
+    fixedAssets: FixedAssetsService,
+    incomes: IncomesService,
+    inventoryValuation: InventoryValuationService,
+    monthlyClose: MonthlyCloseService,
+    payables: PayablesService,
+    payroll: PayrollService,
+    productCosts: ProductCostsService,
+    receivables: ReceivablesService,
+    recurringExpenses: RecurringExpensesService,
+    dailySales: DailySalesService,
+    incomeStatement: IncomeStatementService,
+    profitEngine: ProfitEngine,
+    aggregation: ReportsAggregationService,
+    salesByEmployee: SalesByEmployeeService,
+    taxPayments: TaxPaymentsService,
+    taxes: TaxesService,
   ) {
-    const log = (outcome: string, row_id?: unknown) =>
-      this.logger.log(
-        JSON.stringify({
-          tool,
-          key_id: caller.keyId ?? null,
-          caller_user_id: caller.userId,
-          owner_user_id: caller.ownerUserId ?? null,
-          outcome,
-          row_id: row_id ?? null,
-        }),
-      );
-    try {
-      const base = await this.mcpAuthorizationService.requireContext(
-        caller.userId,
-        permission,
-      );
-      if (isWrite && caller.ownerUserId === null) {
-        throw new ForbiddenException(
-          `MCP key ${caller.keyId} has no owner_user_id; rebind it (PATCH /mcp-keys/${caller.keyId}) before writing`,
-        );
-      }
-      const ctx: OwnershipContext =
-        caller.ownerUserId == null
-          ? base
-          : { ...base, ownerUserId: caller.ownerUserId };
-      const result = await fn(ctx);
-      log('ok', (result as { id?: unknown } | null)?.id);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-      };
-    } catch (error) {
-      log(`error: ${error instanceof Error ? error.message : 'unknown'}`);
-      throw error;
-    }
+    McpToolsService.defineAll(toolkit, {
+      prisma,
+      accounts,
+      cogs,
+      employees,
+      expenseCategories,
+      expenses,
+      fixedAssets,
+      incomes,
+      inventoryValuation,
+      monthlyClose,
+      payables,
+      payroll,
+      productCosts,
+      receivables,
+      recurringExpenses,
+      dailySales,
+      incomeStatement,
+      profitEngine,
+      aggregation,
+      salesByEmployee,
+      taxPayments,
+      taxes,
+    });
+  }
+
+  /* Separado del constructor para que las pruebas armen el registro con dobles. */
+  static defineAll(toolkit: McpToolkit, services: McpServices): void {
+    if (toolkit.registry.length) return;
+    defineReportTools(toolkit, services);
+    defineExpenseTools(toolkit, services);
+    defineIncomeTools(toolkit, services);
+    defineDebtTools(toolkit, services);
+    defineTaxTools(toolkit, services);
+    definePayrollTools(toolkit, services);
+    defineAssetTools(toolkit, services);
+    defineConfigTools(toolkit, services);
+  }
+
+  get registry(): readonly ToolDef[] {
+    return this.toolkit.registry;
   }
 
   buildServer(callerOrUserId: number | ToolCaller): McpServer {
@@ -117,270 +123,8 @@ export class McpToolsService {
       typeof callerOrUserId === 'number'
         ? { userId: callerOrUserId }
         : callerOrUserId;
-    const server = new McpServer({
-      name: 'paldex-mcp',
-      version: '1.0.0',
-    });
-
-    server.registerTool(
-      'expenses_list',
-      {
-        title: 'List expenses',
-        description:
-          'Lists expenses visible to the caller. Read-only, mirrors GET /expenses.',
-        inputSchema: {
-          start_date: z.string().optional(),
-          end_date: z.string().optional(),
-          search: z.string().optional(),
-          account_id: z.number().int().optional(),
-          category_id: z.number().int().optional(),
-          category_type: z.nativeEnum(ExpenseCategoryType).optional(),
-          status: z.nativeEnum(ExpenseStatus).optional(),
-          invoice_status: z.nativeEnum(InvoiceStatus).optional(),
-          vendor: z.string().optional(),
-          is_tax_deductible: z.boolean().optional(),
-          sort_by: z
-            .enum(['date', 'amount', 'concept', 'created_at', 'id', 'paid_at'])
-            .optional(),
-          order: z.enum(['asc', 'desc']).optional(),
-          page: z.number().int().min(1).optional(),
-          limit: z.number().int().min(1).max(100).optional(),
-        },
-      },
-      async (args) =>
-        this.run(caller, 'expenses_list', 'expense:read', false, (ctx) =>
-          this.expensesService.findAll(ctx, args as FilterExpensesDto),
-        ),
-    );
-
-    server.registerTool(
-      'sales_daily',
-      {
-        title: 'Daily sales',
-        description:
-          'Sales broken down day by day over a date range: net and gross sales, ' +
-          'discounts, fees, shipping charged and number of sales per day, plus ' +
-          'totals for the range. Days with no sales are returned as zeros, never ' +
-          "omitted. Days are the shop's local days, not UTC. Read-only, mirrors " +
-          'GET /reports/sales-daily. Both dates are required — there is no ' +
-          'default period, so resolve what the user meant (this month, last week) ' +
-          'and pass explicit dates. Maximum range is 366 days.',
-        inputSchema: {
-          start_date: z
-            .string()
-            .describe('First day of the range, inclusive. Format YYYY-MM-DD.'),
-          end_date: z
-            .string()
-            .describe('Last day of the range, inclusive. Format YYYY-MM-DD.'),
-        },
-      },
-      async (args) =>
-        this.run(caller, 'sales_daily', 'report:read', false, (ctx) =>
-          this.dailySalesService.getDailySales(ctx, args as DailySalesQueryDto),
-        ),
-    );
-
-    server.registerTool(
-      'income_statement',
-      {
-        title: 'Income statement (P&L) with EBITDA',
-        description:
-          'Cash-basis income statement over a date range: net sales − cost of sales = ' +
-          'gross profit; − operating expenses − payroll (net paid + payroll taxes) = EBITDA; ' +
-          '− depreciation and amortization of fixed assets = EBIT; − interest ± gains/losses ' +
-          'on disposed assets = pre-tax income; − income tax (ISR) = net income. Margins are ' +
-          'over net sales. VAT, asset purchases, inventory purchases, debt principal and owner ' +
-          'withdrawals are not expenses and come in `cash_items`. Check `quality`: with ' +
-          'incomplete cost data, gross profit and everything below it is a ceiling. Read-only, ' +
-          'mirrors GET /reports/income-statement. Both dates are required — there is no ' +
-          'default period, so resolve what the user meant and pass explicit dates. Maximum ' +
-          'range is 366 days.',
-        inputSchema: {
-          start_date: z
-            .string()
-            .describe('First day of the range, inclusive. Format YYYY-MM-DD.'),
-          end_date: z
-            .string()
-            .describe('Last day of the range, inclusive. Format YYYY-MM-DD.'),
-        },
-      },
-      async (args) =>
-        this.run(caller, 'income_statement', 'report:read', false, (ctx) =>
-          this.incomeStatementService.getIncomeStatement(
-            ctx,
-            args as IncomeStatementQueryDto,
-          ),
-        ),
-    );
-
-    server.registerTool(
-      'sales_by_employee',
-      {
-        title: 'Sales by employee',
-        description:
-          'Sales attributed to each employee over a date range, with cost of ' +
-          'goods sold, gross profit and cost_data_coverage per person. ' +
-          'Attribution is by weekday: each employee owns the weekdays in their ' +
-          "sales_days, computed in the shop's time zone. Read-only, mirrors " +
-          'GET /reports/sales-by-employee. Both dates are required — there is ' +
-          'no default period, so resolve what the user meant and pass explicit ' +
-          'dates. Pass employee_ids to ask about one person or compare a few; ' +
-          'omit it for everyone. `totals` covers the rows returned and ' +
-          '`period_totals` always covers the whole period, so a filtered answer ' +
-          'still shows what share of sales it represents. Caveat worth ' +
-          'repeating to the user when comparing people across a long range: ' +
-          "there is no shift history, so the range is scored using today's " +
-          'weekday assignment (returned as sales_days on each row), not ' +
-          'whatever it was at the time.',
-        inputSchema: {
-          start_date: z
-            .string()
-            .describe('First day of the range, inclusive. Format YYYY-MM-DD.'),
-          end_date: z
-            .string()
-            .describe('Last day of the range, inclusive. Format YYYY-MM-DD.'),
-          employee_ids: z
-            .array(z.number().int())
-            .optional()
-            .describe(
-              'Omit for every employee. One id for one person, several to compare them.',
-            ),
-          include_unassigned: z
-            .boolean()
-            .optional()
-            .describe(
-              'Include the unassigned row (sales on days nobody owns) when filtering by employee. Always present when not filtering.',
-            ),
-        },
-      },
-      async (args) =>
-        this.run(caller, 'sales_by_employee', 'report:read', false, (ctx) =>
-          this.salesByEmployeeService.getSalesByEmployee(
-            ctx,
-            args as SalesByEmployeeQueryDto,
-          ),
-        ),
-    );
-
-    server.registerTool(
-      'expense_create',
-      {
-        title: 'Create expense',
-        description:
-          "Creates a new expense in the books of the account the API key is bound to (owner_user_id), not the agent's own. There is no argument to choose the owner. Write, requires expense:create, mirrors POST /expenses.",
-        inputSchema: {
-          amount: z.number(),
-          concept: z.string().min(1),
-          date: z.string(),
-          invoiced: z.boolean(),
-          account_id: z.number().int(),
-          category_id: z.number().int().optional(),
-          vendor: z.string().optional(),
-        },
-      },
-      async (args) =>
-        this.run(caller, 'expense_create', 'expense:create', true, (ctx) =>
-          this.expensesService.create(ctx, args as CreateExpenseDto),
-        ),
-    );
-
-    const isoDate = (what: string) =>
-      z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}/, 'Expected YYYY-MM-DD')
-        .describe(what);
-
-    server.registerTool(
-      'payroll_list',
-      {
-        title: 'List payroll payments',
-        description:
-          'Payroll payments (money paid or owed to employees) in the books of the ' +
-          'account the API key is bound to, with the same filters and the same ' +
-          'paginated envelope (data, total, page, limit) as GET /payroll. Read-only, ' +
-          'requires payroll:read. Both dates are required — there is no default ' +
-          'period, so resolve what the user meant and pass explicit dates; they ' +
-          'filter on date_field (scheduled_pay_date by default, or paid_at). ' +
-          'Use status=PENDING with a date range to find periods not yet paid. ' +
-          'This is the only record of money paid to employees; payroll is never ' +
-          'an expense.',
-        inputSchema: {
-          start_date: isoDate('First day, inclusive. Format YYYY-MM-DD.'),
-          end_date: isoDate('Last day, inclusive. Format YYYY-MM-DD.'),
-          employee_id: z.number().int().optional(),
-          status: z.nativeEnum(PayrollStatus).optional(),
-          date_field: z
-            .enum(['scheduled_pay_date', 'paid_at'])
-            .optional()
-            .describe('Which date start_date/end_date apply to.'),
-          page: z.number().int().min(1).optional(),
-          limit: z.number().int().min(1).max(100).optional(),
-        },
-      },
-      async (args) =>
-        this.run(caller, 'payroll_list', 'payroll:read', false, (ctx) =>
-          this.payrollService.findAll(ctx, args as FilterPayrollDto),
-        ),
-    );
-
-    server.registerTool(
-      'payroll_create',
-      {
-        title: 'Create manual payroll payment',
-        description:
-          'Records a manual payroll payment (a bonus or one-off adjustment) as ' +
-          'PENDING, mirroring POST /payroll. Write, requires payroll:create. The ' +
-          'employee must belong to the account the API key is bound to (otherwise ' +
-          'the call fails and nothing is created). It never creates a PAID payment: ' +
-          'to mark it paid call payroll_pay with the real paid_at and account_id. ' +
-          'All dates are explicit; no period is inferred. net = gross - deductions + bonuses.',
-        inputSchema: {
-          employee_id: z.number().int(),
-          period_start: isoDate('Period start. Format YYYY-MM-DD.'),
-          period_end: isoDate('Period end. Format YYYY-MM-DD.'),
-          scheduled_pay_date: isoDate('Planned pay date. Format YYYY-MM-DD.'),
-          gross_amount: z.number().min(0),
-          deductions: z.number().min(0).optional(),
-          bonuses: z.number().min(0).optional(),
-          account_id: z.number().int().optional(),
-          notes: z.string().optional(),
-        },
-      },
-      async (args) =>
-        this.run(caller, 'payroll_create', 'payroll:create', true, (ctx) =>
-          this.payrollService.createManual(
-            ctx,
-            args as CreatePayrollPaymentDto,
-          ),
-        ),
-    );
-
-    server.registerTool(
-      'payroll_pay',
-      {
-        title: 'Mark payroll payment as paid',
-        description:
-          'Marks a payroll payment as PAID, mirroring POST /payroll/:id/pay. Write, ' +
-          'requires payroll:update. paid_at and account_id are REQUIRED: only the ' +
-          'owner knows when the money left and from which account, so nothing is ' +
-          'defaulted to now. The payment must belong to an employee of the account ' +
-          'the API key is bound to, and an already PAID payment is refused. Paying ' +
-          'increases payroll_paid in the reports without touching operating_expenses.',
-        inputSchema: {
-          payment_id: z.number().int().describe('Id of the payroll payment.'),
-          paid_at: isoDate('When it was paid. Format YYYY-MM-DD.'),
-          account_id: z.number().int().describe('Account the money left from.'),
-        },
-      },
-      async (args) =>
-        this.run(caller, 'payroll_pay', 'payroll:update', true, (ctx) =>
-          this.payrollService.pay(ctx, args.payment_id, {
-            paid_at: args.paid_at,
-            account_id: args.account_id,
-          } as PayPayrollDto),
-        ),
-    );
-
+    const server = new McpServer({ name: 'paldex-mcp', version: '2.0.0' });
+    this.toolkit.register(server, caller);
     return server;
   }
 }

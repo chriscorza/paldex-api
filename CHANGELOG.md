@@ -18,6 +18,35 @@ Este archivo es la **fuente de verdad de la versión del producto**: la entrada 
 reciente es la versión vigente, y `package.json` debe coincidir con ella. Hay una
 prueba que falla si se separan.
 
+## [1.4.0] - 2026-11-24
+
+### Added
+
+- El asistente de IA ya puede llevar casi toda la contabilidad del día a día: registrar y corregir
+  gastos, ingresos, cuentas por pagar y por cobrar (con sus pagos y cobros), impuestos, nómina,
+  empleados, activos fijos, costos de producto y costo de lo vendido, y crear cuentas, categorías e
+  impuestos del catálogo. También consulta todos los reportes. Lo que nunca puede tocar: usuarios,
+  roles, invitaciones, credenciales, la conexión con Shopify ni cerrar o reabrir meses.
+- Carga masiva: se le puede pasar un estado de cuenta o varios tickets y registra hasta 100 gastos,
+  ingresos o costos de una vez. Si una fila tiene un error, las demás sí entran.
+- El asistente no duplica: cada registro lleva una referencia (el folio del ticket o la línea del
+  estado de cuenta) y repetirla no crea nada nuevo. Además avisa si algo se parece mucho a un
+  registro existente.
+- Bitácora de lo que hizo el asistente, con cómo estaba cada registro antes y después.
+
+### Changed
+
+- El asistente sólo puede borrar lo que él mismo registró, y siempre mostrando antes qué va a
+  borrar. Lo capturado en la app sólo se borra desde la app.
+- Si el asistente registra algo en un mes ya cerrado, lo hace pero avisa que el cierre quedó
+  desactualizado.
+
+### Fixed
+
+- Al borrar un pago de una cuenta por pagar, o un cobro de una cuenta por cobrar, ya no se puede
+  tocar uno que pertenezca a otra cuenta de usuario.
+- El bloqueo de meses cerrados ya no deja pasar movimientos de la noche del último día del mes.
+
 ## [1.3.0] - 2026-11-23
 
 ### Added

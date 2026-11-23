@@ -40,6 +40,7 @@ model User {
   invitationsSent          Invitation[]              @relation("InvitationInvitedBy")
   inventorySnapshots       InventorySnapshot[]
   fixedAssets              FixedAsset[]
+  mcpActionsOwned          McpAction[]               @relation("McpActionOwner")
   mcpApiKeys               McpApiKey[]               @relation("McpApiKeyOwner")
   mcpApiKeysIssued         McpApiKey[]               @relation("McpApiKeyCreatedBy")
   mcpApiKeysOwned          McpApiKey[]               @relation("McpApiKeyBooksOwner")
@@ -75,6 +76,8 @@ model McpApiKey {
   user      User  @relation("McpApiKeyOwner", fields: [user_id], references: [id])
   createdBy User? @relation("McpApiKeyCreatedBy", fields: [created_by], references: [id])
   owner     User? @relation("McpApiKeyBooksOwner", fields: [owner_user_id], references: [id])
+
+  actions McpAction[]
 
   @@index([user_id])
   @@index([owner_user_id])
@@ -886,4 +889,31 @@ model FixedAsset {
   @@index([in_service_at])
   @@index([expense_id])
   @@map("fixed_assets")
+}
+
+/// Lo que hizo el agente por MCP: una fila por escritura, con el estado antes y
+/// después. Sirve para la idempotencia (`client_ref`), para que el agente sólo
+/// pueda borrar lo que creó, y para revisar qué hizo (GET /mcp-actions).
+/// Mientras `entity_id` es nulo, la fila es una reserva de `client_ref` en curso.
+model McpAction {
+  id             Int      @id @default(autoincrement())
+  key_id         Int?
+  caller_user_id Int
+  owner_user_id  Int
+  tool           String   @db.VarChar(64)
+  entity         String   @db.VarChar(64)
+  entity_id      Int?
+  action         String   @db.VarChar(32)
+  client_ref     String?  @db.VarChar(100)
+  before         Json?
+  after          Json?
+  created_at     DateTime @default(now())
+
+  key   McpApiKey? @relation(fields: [key_id], references: [id], onDelete: SetNull)
+  owner User       @relation("McpActionOwner", fields: [owner_user_id], references: [id])
+
+  @@unique([owner_user_id, tool, client_ref])
+  @@index([owner_user_id, entity, entity_id])
+  @@index([owner_user_id, created_at])
+  @@map("mcp_actions")
 }

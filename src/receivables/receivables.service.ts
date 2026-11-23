@@ -151,9 +151,10 @@ export class ReceivablesService {
     return coll;
   }
 
-  async removeCollection(collectionId: number) {
-    const rc = await this.prisma.receivableCollection.findUnique({
-      where: { id: collectionId },
+  /* Igual que PayablesService.removePayment: el cobro se busca por su dueño. */
+  async removeCollection(ctx: OwnershipContext, collectionId: number) {
+    const rc = await this.prisma.receivableCollection.findFirst({
+      where: { id: collectionId, receivable: { ...buildOwnerFilter(ctx) } },
     });
     if (!rc) throw new NotFoundException('Collection not found');
     const r = await this.prisma.receivable.findUnique({

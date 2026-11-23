@@ -92,7 +92,14 @@ export class ReceivablesController {
   }
   @Delete('collections/:id')
   @RequirePermissions('receivable:update')
-  removeCollection(@Param('id', ParseIntPipe) id: number) {
-    return this.service.removeCollection(id);
+  removeCollection(
+    @CurrentUser() u: { id: number },
+    @Req() r: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.service.removeCollection(
+      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      id,
+    );
   }
 }

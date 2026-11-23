@@ -1,0 +1,48 @@
+import { PrismaService } from '../../prisma.service';
+import { AccountsService } from '../../accounts/accounts.service';
+import { CogsService } from '../../cogs/cogs.service';
+import { EmployeesService } from '../../employees/employees.service';
+import { ExpenseCategoriesService } from '../../expense-categories/expense-categories.service';
+import { ExpensesService } from '../../expenses/expenses.service';
+import { FixedAssetsService } from '../../fixed-assets/fixed-assets.service';
+import { IncomesService } from '../../incomes/incomes.service';
+import { InventoryValuationService } from '../../inventory/inventory-valuation.service';
+import { MonthlyCloseService } from '../../monthly-close/monthly-close.service';
+import { PayablesService } from '../../payables/payables.service';
+import { PayrollService } from '../../payroll/payroll.service';
+import { ProductCostsService } from '../../product-costs/product-costs.service';
+import { ReceivablesService } from '../../receivables/receivables.service';
+import { RecurringExpensesService } from '../../recurring-expenses/recurring-expenses.service';
+import { DailySalesService } from '../../reports/daily-sales.service';
+import { IncomeStatementService } from '../../reports/income-statement.service';
+import { ProfitEngine } from '../../reports/profit-engine.service';
+import { ReportsAggregationService } from '../../reports/reports-aggregation.service';
+import { SalesByEmployeeService } from '../../reports/sales-by-employee.service';
+import { TaxPaymentsService } from '../../tax-payments/tax-payments.service';
+import { TaxesService } from '../../taxes/taxes.service';
+
+/** Los servicios de dominio que usan las tools: los mismos que usa REST. */
+export interface McpServices {
+  prisma: PrismaService;
+  accounts: AccountsService;
+  cogs: CogsService;
+  employees: EmployeesService;
+  expenseCategories: ExpenseCategoriesService;
+  expenses: ExpensesService;
+  fixedAssets: FixedAssetsService;
+  incomes: IncomesService;
+  inventoryValuation: InventoryValuationService;
+  monthlyClose: MonthlyCloseService;
+  payables: PayablesService;
+  payroll: PayrollService;
+  productCosts: ProductCostsService;
+  receivables: ReceivablesService;
+  recurringExpenses: RecurringExpensesService;
+  dailySales: DailySalesService;
+  incomeStatement: IncomeStatementService;
+  profitEngine: ProfitEngine;
+  aggregation: ReportsAggregationService;
+  salesByEmployee: SalesByEmployeeService;
+  taxPayments: TaxPaymentsService;
+  taxes: TaxesService;
+}

@@ -171,6 +171,9 @@ export const PERMISSION_CATALOG = [
   { resource: 'mcp_key', action: 'read' },
   { resource: 'mcp_key', action: 'update' },
   { resource: 'mcp_key', action: 'delete' },
+  /* Leer la bitácora de lo que hizo el agente (GET /mcp-actions). */
+  { resource: 'mcp_action', action: 'read' },
+  { resource: 'mcp_action', action: 'read', scope: 'OWN' as const },
 ] as const;
 
 export type PermissionString = (typeof PERMISSION_CATALOG)[number] extends {

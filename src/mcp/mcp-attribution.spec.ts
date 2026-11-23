@@ -1,13 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { McpToolsService, ToolCaller } from './mcp-tools.service';
-import { McpAuthorizationService } from './mcp-authorization.service';
+import { ToolCaller } from './toolkit';
+import { connectTestClient } from './testing';
 import { ExpensesService } from '../expenses/expenses.service';
-import { DailySalesService } from '../reports/daily-sales.service';
-import { IncomeStatementService } from '../reports/income-statement.service';
 import { PayrollService } from '../payroll/payroll.service';
-import { SalesByEmployeeService } from '../reports/sales-by-employee.service';
 
 /*
  * Atribución de escrituras, de punta a punta sin base de datos: protocolo MCP
@@ -108,21 +104,27 @@ describe('MCP write attribution (fix-mcp-write-attribution)', () => {
       }),
     },
     $transaction: jest.fn((ops) => Promise.all(ops)),
+    mcpAction: {
+      create: jest.fn(({ data }) => Promise.resolve({ id: nextId++, ...data })),
+      update: jest.fn(({ where, data }) =>
+        Promise.resolve({ id: where.id, ...data }),
+      ),
+      findFirst: jest.fn().mockResolvedValue(null),
+      delete: jest.fn(),
+    },
+    monthlyClose: { findUnique: jest.fn().mockResolvedValue(null) },
   };
 
   async function connect(caller: ToolCaller) {
-    const tools = new McpToolsService(
-      new ExpensesService(prisma),
-      {} as unknown as DailySalesService,
-      {} as unknown as IncomeStatementService,
-      {} as unknown as SalesByEmployeeService,
-      new PayrollService(prisma),
-      authService as unknown as McpAuthorizationService,
-    );
-    const server = tools.buildServer(caller);
-    const [c, s] = InMemoryTransport.createLinkedPair();
-    client = new Client({ name: 't', version: '1' });
-    await Promise.all([server.connect(s), client.connect(c)]);
+    ({ client } = await connectTestClient({
+      prisma,
+      services: {
+        expenses: new ExpensesService(prisma),
+        payroll: new PayrollService(prisma),
+      },
+      authorization: authService,
+      caller,
+    }));
   }
 
   const expenseArgs = (account_id: number) => ({

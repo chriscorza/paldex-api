@@ -153,9 +153,14 @@ export class PayablesService {
     return payment;
   }
 
-  async removePayment(paymentId: number) {
-    const pp = await this.prisma.payablePayment.findUnique({
-      where: { id: paymentId },
+  /*
+   * El pago se busca a través de su cuenta por pagar filtrada por dueño. Antes
+   * se buscaba sólo por id, así que cualquiera con `payable:update` podía borrar
+   * el pago de otro dueño.
+   */
+  async removePayment(ctx: OwnershipContext, paymentId: number) {
+    const pp = await this.prisma.payablePayment.findFirst({
+      where: { id: paymentId, payable: { ...buildOwnerFilter(ctx) } },
     });
     if (!pp) throw new NotFoundException('Payment not found');
     const p = await this.prisma.payable.findUnique({

@@ -3,55 +3,78 @@
 The MCP surface an AI agent talks to. Transport, auth and the per-tool authorization plumbing came
 from `openspec/changes/add-mcp-server`; tools are added one change at a time after that.
 
-## Write policy: only domains with an explicit agent write policy
+## Policy: everything except the denylist (expand-mcp-agent)
 
-A tool that creates, updates or deletes data is added **only together with a written agent write
-policy for its domain**: who may call it, under which permission, and which ownership target the
-written row gets (the key's `owner_user_id`). Two domains have one today:
+The agent can read and write every domain of the API **except a structural denylist**: users,
+roles and permissions, invitations, MCP keys, the Shopify connection and its credentials (OAuth,
+reconnection, cost recalculation), monthly-close writes (review, close, reopen) and authentication.
+Those modules are not even imported by `McpModule`, so no role permission can make them reachable.
+`monthly_close_status` only reads.
 
-- **Expenses** — `expense_create` (`expense:create`).
-- **Payroll** — `payroll_create` (`payroll:create`), `payroll_pay` (`payroll:update`). Payroll
-  **taxes** (`TaxPaymentType.PAYROLL_TAX`) are *not* payroll for this purpose and stay unreachable.
+About 84 tools, one per action, declared per domain in `src/mcp/tools/<domain>.tools.ts`:
+`context`/`reports`, `expenses` (+ recurring), `incomes` (+ COGS), `debts` (payables, receivables),
+`taxes` (tax payments + tax catalog), `payroll` (+ employees), `assets` (fixed assets + product
+costs), `config` (accounts, expense categories). `mcp-tools.service.spec.ts` enumerates **every
+tool and every write tool**: adding one without touching that list fails the build.
 
-Every other domain is read-only — fixed assets included: the agent can read the income statement
-(depreciation comes from them) but cannot create, edit or dispose of an asset. The registry test in `mcp-tools.service.spec.ts` enumerates every
-tool **and every write tool** explicitly, so adding one without touching the test fails the build.
-(History: `add-mcp-daily-sales` froze writes after `expense_create`; `add-mcp-payroll-payments`
-replaced "never again" with this policy.)
+**`PayrollPayment` is the only record of money paid to employees** and **`TaxPayment` the only
+record of taxes paid**: neither is ever an expense. An expense whose category has `type = PAYROLL`
+is refused everywhere with a 400 pointing to payroll; see `src/payroll/CLAUDE.md`.
 
-**`PayrollPayment` is the only record of money paid to employees.** An expense whose category has
-`type = PAYROLL` is refused everywhere (`ExpensesService.create/update`, recurring templates) with
-a 400 pointing to `POST /payroll`; see `src/payroll/CLAUDE.md`.
+## How a tool runs: `McpToolkit` (`toolkit.ts`)
 
-## Tool ↔ REST pairing
+A tool exists only through `toolkit.define({ name, kind, permission, input, dto, entity, handler,
+load, targetId, dateOf, preWarnings })`, and every call goes through the same pipeline:
 
-| MCP tool | REST equivalent | Permission | Scope |
-|---|---|---|---|
-| `expenses_list` | `GET /expenses` | `expense:read` | scope-aware (`OWN`/`ANY`) |
-| `sales_daily` | `GET /reports/sales-daily` | `report:read` | scope-aware (`OWN`/`ANY`) |
-| `sales_by_employee` | `GET /reports/sales-by-employee` | `report:read` | scope-aware (`OWN`/`ANY`) |
-| `income_statement` | `GET /reports/income-statement` | `report:read` | scope-aware (`OWN`/`ANY`); `start_date`/`end_date` required |
-| `expense_create` | `POST /expenses` | `expense:create` | attributes to the key's `owner_user_id` |
-| `payroll_list` | `GET /payroll` | `payroll:read` | scope-aware; `start_date`/`end_date` required |
-| `payroll_create` | `POST /payroll` | `payroll:create` | employee must belong to the key's owner; always `PENDING` |
-| `payroll_pay` | `POST /payroll/:id/pay` | `payroll:update` | payment must belong to the key's owner; `paid_at` and `account_id` required |
+1. **Authorization** — `McpAuthorizationService.requireContext(callerUserId, permission)`, then
+   writes are refused for a key with no `owner_user_id`. **Never register a tool another way.**
+2. **Validation with the REST DTO** — `plainToInstance` + `validate` with `whitelist` and
+   `forbidNonWhitelisted`, like the global `ValidationPipe`. zod only describes the schema to the
+   model.
+3. **Idempotency** (`create`) — `client_ref` is *reserved* in `mcp_actions` before the handler runs,
+   so of two concurrent calls only one reaches the handler (the other gets "still in progress").
+   A repeat returns the original entity with `duplicate: true`. A failed handler frees the reservation.
+4. **Handler** — the same service method the REST endpoint uses, with the key owner's context.
+5. **Warnings** — `CLOSED_MONTH` (the month is computed in the business zone; the write still
+   happens, per the owner's decision) and `POSSIBLE_DUPLICATE` for expenses/incomes (same amount,
+   ±3 days, same account/vendor/normalized concept; never blocks).
+6. **Action log** — one `mcp_actions` row with the public projection before and after. Written
+   after the domain write, not in its transaction: two failures → `ACTION_NOT_LOGGED` warning.
+7. **Response** — writes return `{ entity, warnings, action_id }`; reads return the service result
+   as-is. Errors come back as `isError` results whose text carries Nest's detail
+   (`400: date must be a valid ISO 8601 date string`), so the agent can correct itself.
 
-`payroll_pay` calls `PayrollService.pay(ctx, id, dto)`, the same method `POST /payroll/:id/pay` uses: REST and MCP now share one ownership path (a foreign id is `404`, the account must belong to the effective owner).
+**Schemas are derived from the DTOs** (`dto-schema.ts` reads class-validator decorators and
+`@ApiProperty` descriptions). Do not hand-write a zod schema next to a DTO: it drifts.
 
-Keep this table in sync with `src/mcp/mcp-tools.service.ts` — a hand-written tool list can drift
-from the REST contract silently otherwise (see design.md "Risks").
+**Deletes are two-step and only for what the agent created.** A `*_delete` tool refuses (403) any
+record with no `create` row in `mcp_actions` for a key of the same owner — what the owner typed in
+the app cannot be deleted by the agent. Without `confirmation_token` it deletes nothing and returns
+a preview plus an HMAC token (`JWT_SECRET`, bound to key, tool and id, 10-minute expiry). Edits,
+payments and disposals need no confirmation (owner's decision).
 
-**Tools take explicit date ranges, never a relative or implicit period.** `sales_daily` and
-`sales_by_employee` require `start_date` and `end_date` and have no "current month" default. The
-agent is the only party that knows what the user meant by "this month"; a second server-side notion
-of "current" would be a second clock, and when the two disagree it surfaces as a silently wrong
-period instead of an error.
+**Bulk tools** (`expenses_create_bulk`, `incomes_create_bulk`, `product_costs_bulk`): up to 100
+items, each through the single tool's whole pipeline; per-item `created | duplicate | error` plus a
+summary. Resending the batch with the same `client_ref`s only adds what was missing.
+
+**Shopify-managed incomes** (with `shopify_order_id`) are refused by `income_update`/`income_delete`:
+the sync owns them. Their COGS can still be captured.
+
+**`GET /mcp-actions`** (`mcp_action:read`, no `@AllowApiKey`) lists the log for the owner: what the
+agent did, with before/after. A key cannot read or erase its own trail.
+
+**Permissions for the `ai_agent` role**: `scripts/grant-ai-agent-permissions.ts` reads every tool's
+permission from the registry and grants the missing ones with `OWN` scope (dry run by default,
+`--apply` to write). `grant-permissions.spec.ts` checks every tool permission exists in the catalog
+and that none is an admin permission.
+
+**Tools take explicit date ranges, never a relative or implicit period.** Reports require
+`start_date` and `end_date`; `context_get.today` gives the agent the business date to resolve
+"this month". A second server-side notion of "current" would be a second clock.
 
 **A filtered answer must still say what it is a fraction of.** `sales_by_employee` returns `totals`
-for the rows it returned *and* `period_totals` for the whole period regardless of filtering. Without
-that second block, "Luis: 40,000" cannot be interpreted — it could be nearly all of the period or a
-rounding error in it — and the reconcile against `GET /reports/monthly` would stop holding the
-moment anyone filtered. Any future tool that grows a filter should carry the same pair.
+for the rows it returned *and* `period_totals` for the whole period. Any future tool that grows a
+filter should carry the same pair.
 
 ## Why one route, not `@RequirePermissions` per tool
 
@@ -66,13 +89,11 @@ per-route. **Never register a tool that skips this call.**
 
 ## The denylist is structural, not a permission check
 
-Payroll **taxes**, tax payments, user/role/permission management, Shopify connection credentials,
-invitations, chart-of-accounts writes, monthly-close writes, and
-`POST /reports/shopify/recalculate-costs` have no tool in `mcp-tools.service.ts` — full stop. This
-is deliberate: granting the `ai_agent` role a broader permission (by mistake or otherwise) must
-not make any of those reachable over MCP, because there is no code path into those services from
-this file at all. `mcp-tools.service.spec.ts` asserts this by enumerating the registered tools —
-if you add a tool, that test is what keeps this true.
+User/role/permission management, invitations, MCP keys, Shopify connection and credentials,
+monthly-close writes and authentication have no tool — and their modules are not imported by
+`McpModule`. Granting the `ai_agent` role a broader permission (by mistake or otherwise) must not
+make any of those reachable over MCP. `mcp-tools.service.spec.ts` asserts it on tool names and
+arguments; `grant-permissions.spec.ts` asserts no tool asks for an admin permission.
 
 ## Auth model
 
@@ -109,7 +130,7 @@ created row); it travels as `OwnershipContext.ownerUserId` and is read with `eff
   that owner even if the caller's scope is `ANY` (`buildWriteTargetFilter`): scope widens what is
   *read*, not which books a row may be thrown into.
 - Every tool call emits one structured log line `{ tool, key_id, caller_user_id, owner_user_id,
-  outcome, row_id }` (no audit table; per-row provenance would be its own change).
+  outcome, row_id }`, and every write also leaves an `mcp_actions` row (see above).
 
 **A key works only on `POST /mcp`.** `AuthGuard` rejects one on any route without
 `@AllowApiKey()` — including `/mcp-keys` itself, so a leaked key cannot mint more. The opt-in is

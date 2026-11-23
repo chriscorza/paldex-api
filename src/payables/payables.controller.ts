@@ -94,6 +94,9 @@ export class PayablesController {
     @Req() r: any,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    return this.service.removePayment(id);
+    return this.service.removePayment(
+      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      id,
+    );
   }
 }
