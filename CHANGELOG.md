@@ -18,6 +18,19 @@ Este archivo es la **fuente de verdad de la versión del producto**: la entrada 
 reciente es la versión vigente, y `package.json` debe coincidir con ella. Hay una
 prueba que falla si se separan.
 
+## [1.5.0] - 2026-11-24
+
+### Added
+
+- En Administración → Roles, el editor de permisos tiene un botón "Permisos del asistente de IA"
+  que marca de un clic exactamente los permisos que usa el asistente, con alcance propio. No quita
+  nada de lo que el rol ya tenía y no guarda solo: resalta lo que marcó para revisarlo.
+
+### Changed
+
+- El editor de permisos muestra cada sección con su nombre en español (Gastos, Nómina, Cuentas por
+  pagar…) en vez del nombre interno.
+
 ## [1.4.0] - 2026-11-24
 
 ### Added

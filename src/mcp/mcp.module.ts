@@ -20,6 +20,7 @@ import { TaxPaymentsModule } from '../tax-payments/tax-payments.module';
 import { TaxesModule } from '../taxes/taxes.module';
 import { McpController } from './mcp.controller';
 import { McpActionsController } from './mcp-actions.controller';
+import { McpToolsInfoController } from './mcp-tools-info.controller';
 import { McpAuthorizationService } from './mcp-authorization.service';
 import { McpToolsService } from './mcp-tools.service';
 import { McpToolkit } from './toolkit';
@@ -51,7 +52,7 @@ import { McpToolkit } from './toolkit';
     TaxPaymentsModule,
     TaxesModule,
   ],
-  controllers: [McpController, McpActionsController],
+  controllers: [McpController, McpActionsController, McpToolsInfoController],
   providers: [McpAuthorizationService, McpToolkit, McpToolsService],
 })
 export class McpModule {}
