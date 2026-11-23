@@ -12,7 +12,11 @@ import {
 } from './dto/create-expense-category.dto';
 import { ExpenseCategoryType } from '@prisma/client';
 import { EXPENSE_CATEGORY_PUBLIC_SELECT } from './entities/expense-category.entity';
-import { OwnershipContext, effectiveOwnerId } from '../common/ownership';
+import {
+  OwnershipContext,
+  effectiveOwnerId,
+  visibleCategoriesFilter,
+} from '../common/ownership';
 
 const DEFAULT_FLAGS: Record<
   ExpenseCategoryType,
@@ -152,9 +156,7 @@ export class ExpenseCategoriesService {
   async findAll(ctx: OwnershipContext, filters: FilterExpenseCategoriesDto) {
     const where: any = {};
     const ownerFilter =
-      ctx.scope === 'OWN'
-        ? { OR: [{ user_id: effectiveOwnerId(ctx) }, { is_system: true }] }
-        : {};
+      ctx.scope === 'OWN' ? visibleCategoriesFilter(effectiveOwnerId(ctx)) : {};
     Object.assign(where, ownerFilter);
 
     if (filters.type) {
@@ -185,7 +187,7 @@ export class ExpenseCategoriesService {
   async findOne(ctx: OwnershipContext, id: number) {
     const where: any = { id };
     if (ctx.scope === 'OWN') {
-      where.OR = [{ user_id: effectiveOwnerId(ctx) }, { is_system: true }];
+      Object.assign(where, visibleCategoriesFilter(effectiveOwnerId(ctx)));
     }
 
     const category = await this.prisma.expenseCategory.findFirst({

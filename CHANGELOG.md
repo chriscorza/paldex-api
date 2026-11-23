@@ -18,7 +18,16 @@ Este archivo es la **fuente de verdad de la versión del producto**: la entrada 
 reciente es la versión vigente, y `package.json` debe coincidir con ella. Hay una
 prueba que falla si se separan.
 
-## [1.6.0] - 2026-11-24
+## [1.6.1] - 2026-11-23
+
+### Fixed
+- Las categorías de gasto ya no salen repetidas. Cada cuenta veía también las categorías «del
+  sistema» de las demás cuentas de la instalación (dos «Renta local», dos «Meta Ads»…); ahora
+  sólo ves las tuyas, en la app, en los reportes y para el asistente de IA. No se borró ni movió
+  ningún gasto.
+- Al registrar un gasto ya no se puede elegir una categoría de otra cuenta.
+
+## [1.6.0] - 2026-11-23
 
 ### Added
 

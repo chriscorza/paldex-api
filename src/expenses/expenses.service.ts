@@ -26,6 +26,7 @@ import {
   buildWriteTargetFilter,
   effectiveOwnerId,
   isDelegated,
+  visibleCategoriesFilter,
 } from '../common/ownership';
 import { assertCategoryNotPayroll } from '../payroll/payroll-category.guard';
 import { startOfDayInZone } from '../common/timezone';
@@ -367,7 +368,7 @@ export class ExpensesService {
     if (category_id !== undefined && category_id !== null) {
       const catWhere: any = { id: category_id };
       if (ctx.scope === 'OWN' || isDelegated(ctx)) {
-        catWhere.OR = [{ user_id: effectiveOwnerId(ctx) }, { is_system: true }];
+        Object.assign(catWhere, visibleCategoriesFilter(effectiveOwnerId(ctx)));
       }
       const category = await this.prisma.expenseCategory.findFirst({
         where: catWhere,

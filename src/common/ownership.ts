@@ -45,3 +45,16 @@ export function buildWriteTargetFilter(ctx: OwnershipContext): {
   }
   return {};
 }
+
+/*
+ * Qué categorías de gasto ve un dueño de libros: las suyas (incluidas las «del
+ * sistema» que se le sembraron a él) y las globales heredadas (`user_id` nulo).
+ * `is_system` NO basta: las del sistema se siembran por cuenta, así que filtrar
+ * sólo por esa bandera mostraba a cada quien las categorías de todas las demás
+ * cuentas, con nombres repetidos.
+ */
+export function visibleCategoriesFilter(ownerId: number) {
+  return {
+    OR: [{ user_id: ownerId }, { user_id: null, is_system: true }],
+  };
+}

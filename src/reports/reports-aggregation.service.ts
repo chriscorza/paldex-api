@@ -5,9 +5,18 @@ import {
   OwnershipContext,
   buildOwnerFilter,
   effectiveOwnerId,
+  visibleCategoriesFilter,
 } from '../common/ownership';
 import { Prisma as PrismaClient } from '@prisma/client';
 const Decimal = PrismaClient.Decimal;
+
+/*
+ * Las categorías con que se clasifican los gastos deben cubrir los mismos libros
+ * que esos gastos: con scope ANY se suman gastos de todas las cuentas, así que
+ * hacen falta las categorías de todas; con OWN, las del dueño.
+ */
+const categoryLookupFilter = (ctx: OwnershipContext) =>
+  ctx.scope === 'ANY' ? {} : visibleCategoriesFilter(effectiveOwnerId(ctx));
 
 @Injectable()
 export class ReportsAggregationService {
@@ -55,9 +64,7 @@ export class ReportsAggregationService {
         _sum: { total_cost: true },
       }),
       this.prisma.expenseCategory.findMany({
-        where: {
-          OR: [{ user_id: effectiveOwnerId(ctx) }, { is_system: true }],
-        },
+        where: categoryLookupFilter(ctx),
         select: {
           id: true,
           type: true,
@@ -267,7 +274,7 @@ export class ReportsAggregationService {
     });
 
     const categories = await this.prisma.expenseCategory.findMany({
-      where: { OR: [{ user_id: effectiveOwnerId(ctx) }, { is_system: true }] },
+      where: categoryLookupFilter(ctx),
       select: { id: true, name: true, type: true },
     });
 

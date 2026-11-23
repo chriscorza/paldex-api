@@ -3,6 +3,7 @@ import {
   buildWriteTargetFilter,
   effectiveOwnerId,
   isDelegated,
+  visibleCategoriesFilter,
 } from './ownership';
 
 describe('ownership', () => {
@@ -55,6 +56,14 @@ describe('ownership', () => {
       expect(buildWriteTargetFilter({ userId: 9, scope: 'OWN' })).toEqual({
         user_id: 9,
       });
+    });
+  });
+});
+
+describe('visibleCategoriesFilter', () => {
+  it('shows the owner categories and legacy global ones, never another account system categories', () => {
+    expect(visibleCategoriesFilter(1)).toEqual({
+      OR: [{ user_id: 1 }, { user_id: null, is_system: true }],
     });
   });
 });
