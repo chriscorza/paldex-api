@@ -1,7 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+} from '../common/ownership';
 import {
   dateKeyInZone,
   eachDateKeyInZone,
@@ -378,6 +382,18 @@ export class IncomeStatementService {
       },
       warnings,
     };
+  }
+
+  /*
+   * El nombre que encabeza el PDF: el del dueño de los libros (no el de quien
+   * llama: con una llave re-enlazada son distintos). Sin nombre, su correo.
+   */
+  async businessName(ctx: OwnershipContext): Promise<string> {
+    const owner = await this.prisma.user.findUnique({
+      where: { id: effectiveOwnerId(ctx) },
+      select: { name: true, email: true },
+    });
+    return owner?.name?.trim() || owner?.email || 'Paldex';
   }
 
   /* Los mismos renglones que la pantalla, aplanados: el CSV no puede divergir. */

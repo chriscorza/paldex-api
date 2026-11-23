@@ -11,6 +11,7 @@ import { SalesByEmployeeService } from './sales-by-employee.service';
 import { InventoryCostService } from './inventory-cost.service';
 import { DailySalesService } from './daily-sales.service';
 import { IncomeStatementService } from './income-statement.service';
+import { IncomeStatementPdfService } from './income-statement-pdf.service';
 
 @Module({
   imports: [PrismaModule, ShopifyModule, InventoryModule],
@@ -24,6 +25,7 @@ import { IncomeStatementService } from './income-statement.service';
     InventoryCostService,
     DailySalesService,
     IncomeStatementService,
+    IncomeStatementPdfService,
   ],
   exports: [
     ReportsAggregationService,

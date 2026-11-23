@@ -24,6 +24,7 @@ import { DailySalesService } from './daily-sales.service';
 import { DailySalesQueryDto } from './dto/daily-sales-query.dto';
 import { DailySalesReportEntity } from './entities/daily-sales.entity';
 import { IncomeStatementService } from './income-statement.service';
+import { IncomeStatementPdfService } from './income-statement-pdf.service';
 import {
   IncomeStatementExportQueryDto,
   IncomeStatementQueryDto,
@@ -57,6 +58,7 @@ export class ReportsController {
     private readonly inventoryValuationService: InventoryValuationService,
     private readonly dailySalesService: DailySalesService,
     private readonly incomeStatementService: IncomeStatementService,
+    private readonly incomeStatementPdfService: IncomeStatementPdfService,
   ) {}
 
   @Get('income-statement')
@@ -88,9 +90,11 @@ export class ReportsController {
 
   @Get('income-statement/export')
   @ApiOperation({
-    summary: 'Exportar el estado de resultados a CSV',
+    summary: 'Exportar el estado de resultados a CSV o PDF',
     description:
-      'Los mismos renglones que `GET /reports/income-statement`, aplanados.',
+      '`format=csv` (por omisión): los mismos renglones que `GET /reports/income-statement`, ' +
+      'aplanados. `format=pdf`: el documento para imprimir o mandar al contador, con ' +
+      'resumen, cascada con % sobre ventas, movimientos que no son gasto, avisos y glosario.',
   })
   async exportIncomeStatement(
     @CurrentUser() user: { id: number },
@@ -106,6 +110,22 @@ export class ReportsController {
       ctx,
       { start_date: query.start_date, end_date: query.end_date },
     );
+    const filename = `estado-de-resultados-${statement.period.start_date}_${statement.period.end_date}`;
+
+    if (query.format === 'pdf') {
+      const pdf = await this.incomeStatementPdfService.render(statement, {
+        businessName: await this.incomeStatementService.businessName(ctx),
+        generatedAt: new Date(),
+      });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}.pdf"`,
+      );
+      res.send(pdf);
+      return;
+    }
+
     const csv = this.incomeStatementService
       .toCsvRows(statement)
       .map((row) => row.map((field) => escapeCsvField(field)).join(','))
@@ -114,7 +134,7 @@ export class ReportsController {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="estado-de-resultados-${statement.period.start_date}_${statement.period.end_date}.csv"`,
+      `attachment; filename="${filename}.csv"`,
     );
     res.send(csv);
   }

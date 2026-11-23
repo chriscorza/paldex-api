@@ -26,6 +26,10 @@ prueba que falla si se separan.
   netas, costo de ventas, utilidad bruta, gastos de operación, nómina, EBITDA, depreciación,
   utilidad operativa, intereses, utilidad antes de impuestos, ISR y utilidad neta, con el margen
   de cada una. Se puede descargar en CSV y el asistente de IA también lo puede consultar.
+- El estado de resultados se descarga en PDF listo para imprimir o mandar al contador: resumen
+  con los cuatro números clave, la cascada completa con el porcentaje de cada renglón sobre las
+  ventas, lo que salió sin ser gasto, los avisos sobre la calidad de los datos y una guía corta
+  para leerlo.
 - Lo que sale de la cuenta pero no es gasto (el IVA que se entera al SAT, las compras de equipo,
   las compras de mercancía, el pago de capital de préstamos y los retiros del dueño) aparece
   aparte, para que se vea que no se perdió nada.

@@ -280,6 +280,13 @@ This one values what is **left**.
   statement's net income does not match `GET /reports/monthly`'s, which subtracts every tax payment.
 - **Every paid expense lands in exactly one line**, P&L or `cash_items` (`classifyExpense`); a test
   enforces it. `cash_items.other_non_operating` should be zero — if not, a category flags nothing.
+- **PDF export** (`/export?format=pdf`) is drawn server-side with `pdfkit` in
+  `income-statement-pdf.service.ts`: `buildRows`/`buildCashRows`/`buildNotes` decide content (pure,
+  tested), `render` only draws. Standard PDF fonts only (Helvetica, WinAnsi): no `−` (U+2212), so
+  deductions are shown in parentheses. pdfkit pulls ESM-only deps (`fontkit`, `linebreak`,
+  `unicode-trie`, `png-js`): Node 22 `require`s them fine at runtime, but Jest cannot — the jest
+  config transforms those packages and maps `fontkit` (only needed for custom fonts) to
+  `test/stubs/fontkit.ts`, which throws if anything tries to use it.
 - **The monthly report still subtracts interest in operating expenses** (`sumExpensesByPurpose`
   adds `INTEREST` to `operating`) so moving "Intereses de deuda" to `INTEREST` did not change its numbers.
 

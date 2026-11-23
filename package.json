@@ -36,6 +36,7 @@
     "dotenv": "^17.4.1",
     "google-auth-library": "^11.0.0",
     "i18next": "^26.3.6",
+    "pdfkit": "^0.21.0",
     "prisma": "^7.9.1",
     "react-i18next": "^17.0.11",
     "reflect-metadata": "^0.2.2",
@@ -51,6 +52,7 @@
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.1.2",
+    "@types/pdfkit": "^0.17.7",
     "@types/supertest": "^7.2.1",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
@@ -79,12 +81,27 @@
     ],
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
+      "node_modules/.+\\.js$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "allowJs": true,
+            "module": "commonjs"
+          }
+        }
+      ],
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(linebreak|unicode-trie|png-js)/)"
+    ],
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
+    "moduleNameMapper": {
+      "^fontkit$": "<rootDir>/../test/stubs/fontkit.ts"
+    },
     "testEnvironment": "node"
   }
 }

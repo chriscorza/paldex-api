@@ -115,3 +115,26 @@ Todas las sumas SHALL filtrarse por el dueño efectivo con `buildOwnerFilter`, i
 
 - **WHEN** un usuario con `report:read` en alcance `OWN` pide el reporte
 - **THEN** sólo se suman sus ventas, gastos, nómina, impuestos y activos
+
+### Requirement: Export a PDF
+
+`GET /reports/income-statement/export?format=pdf` SHALL produce a PDF of the same statement, with:
+- a header carrying the books owner's name, the period (a full calendar month named as a month) and the basis;
+- summary cards for net sales, gross profit, EBITDA and net income, each with its margin;
+- the full waterfall, with deductions in parentheses and each row's percentage of net sales;
+- the cash items that are not expenses;
+- the data-quality and asset warnings;
+- a short glossary;
+- page numbers on every page.
+
+Breakdown rows that are zero SHALL be omitted, and main rows SHALL NOT be, so the structure is the same in every period.
+
+#### Scenario: Same numbers as the screen
+
+- **WHEN** the PDF is exported for a range
+- **THEN** every amount in it equals the one in `GET /reports/income-statement` for the same range
+
+#### Scenario: Long statements paginate
+
+- **WHEN** the statement has more rows than fit on one page
+- **THEN** the table continues on the next page with its header repeated, and no row is cut

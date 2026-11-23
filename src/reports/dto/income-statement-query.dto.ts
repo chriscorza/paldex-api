@@ -17,8 +17,8 @@ export class IncomeStatementQueryDto {
 }
 
 export class IncomeStatementExportQueryDto extends IncomeStatementQueryDto {
-  @ApiPropertyOptional({ enum: ['csv'], default: 'csv' })
+  @ApiPropertyOptional({ enum: ['csv', 'pdf'], default: 'csv' })
   @IsOptional()
-  @IsIn(['csv'])
-  format?: 'csv';
+  @IsIn(['csv', 'pdf'])
+  format?: 'csv' | 'pdf';
 }

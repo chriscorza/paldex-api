@@ -5,6 +5,14 @@
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
+    "node_modules/.+\\.js$": [
+      "ts-jest",
+      { "tsconfig": { "allowJs": true, "module": "commonjs" } }
+    ],
     "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "transformIgnorePatterns": ["/node_modules/(?!(linebreak|unicode-trie|png-js)/)"],
+  "moduleNameMapper": {
+    "^fontkit$": "<rootDir>/stubs/fontkit.ts"
   }
 }

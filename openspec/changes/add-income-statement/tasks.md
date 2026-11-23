@@ -42,6 +42,13 @@
 - [x] 6.3 Página "Estado de resultados" en Reports: selector de rango con atajos (mes, trimestre, año en curso), tabla de `lines` con subtotales resaltados y márgenes, bloque de flujo aparte, avisos de `quality` y `warnings`, botón de export CSV, y nota de que la utilidad neta difiere de la del reporte mensual porque aquí el IVA no es gasto.
 - [x] 6.4 Traducciones en `es.ts` y `en.ts`; pruebas de ambas páginas con el patrón de mock de `../API/Api`.
 
+## 6b. Export a PDF
+
+- [x] 6b.1 `IncomeStatementPdfService` with pdfkit: header, KPI cards, waterfall with % of sales, cash items, warnings, glossary, page footers.
+- [x] 6b.2 `format=pdf` on `GET /reports/income-statement/export`; heading with the books owner's name.
+- [x] 6b.3 Jest config for pdfkit's ESM deps; tests for row building, formatting, pagination and a valid PDF.
+- [x] 6b.4 "Descargar PDF" button on the front page.
+
 ## 7. Cierre
 
 - [x] 7.1 Documentar en `paldex-api/CLAUDE.md` la sección del estado de resultados (qué va en cada renglón y por qué, nómina = neto + `PAYROLL_TAX`, IVA fuera, `CAPEX` contra depreciación) y la de activos fijos.
