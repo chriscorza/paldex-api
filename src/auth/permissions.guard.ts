@@ -35,11 +35,14 @@ export class PermissionsGuard implements CanActivate {
 
     const dbUser = await this.prisma.user.findUnique({
       where: { id: user.id },
-      select: { id: true, role_id: true },
+      select: { id: true, role_id: true, books_owner_id: true },
     });
     if (!dbUser) {
       throw new UnauthorizedException();
     }
+    // Un socio ligado a los libros de otra cuenta lee y escribe en ellos: los
+    // controladores lo pasan a OwnershipContext como `ownerUserId`.
+    request.booksOwnerId = dbUser.books_owner_id ?? undefined;
 
     const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
       PERMISSIONS_KEY,

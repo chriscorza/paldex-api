@@ -32,6 +32,7 @@ export class CogsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.findByIncome(ctx, incomeId);
   }
@@ -47,6 +48,7 @@ export class CogsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.create(ctx, incomeId, dto);
   }
@@ -62,6 +64,7 @@ export class CogsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.update(ctx, id, dto);
   }
@@ -76,6 +79,7 @@ export class CogsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.remove(ctx, id);
   }

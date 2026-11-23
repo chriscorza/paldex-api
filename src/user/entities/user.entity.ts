@@ -7,6 +7,7 @@ export const USER_SELECT = {
   photo_url: true,
   locale: true,
   created_at: true,
+  books_owner_id: true,
 } satisfies Prisma.UserSelect;
 
 export type SafeUser = {
@@ -16,4 +17,5 @@ export type SafeUser = {
   photo_url: string | null;
   locale: string;
   created_at: Date;
+  books_owner_id: number | null;
 };

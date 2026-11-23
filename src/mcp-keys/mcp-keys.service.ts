@@ -143,6 +143,7 @@ export class McpKeysService {
         expires_at: true,
         last_used_at: true,
         user: { select: { email: true } },
+        owner: { select: { books_owner_id: true } },
       },
     });
     if (!key) return null;
@@ -161,7 +162,8 @@ export class McpKeysService {
     return {
       id: key.id,
       user_id: key.user_id,
-      owner_user_id: key.owner_user_id,
+      // Una llave ligada a un socio trabaja, como él, en los libros del dueño.
+      owner_user_id: key.owner?.books_owner_id ?? key.owner_user_id,
       email: key.user.email,
     };
   }

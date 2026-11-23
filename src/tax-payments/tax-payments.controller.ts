@@ -40,6 +40,7 @@ export class TaxPaymentsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.create(ctx, dto);
   }
@@ -53,6 +54,7 @@ export class TaxPaymentsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.findAll(ctx, filters);
   }
@@ -66,6 +68,7 @@ export class TaxPaymentsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.estimate(ctx, query);
   }
@@ -79,6 +82,7 @@ export class TaxPaymentsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.findOne(ctx, id);
   }
@@ -94,6 +98,7 @@ export class TaxPaymentsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.update(ctx, id, dto);
   }
@@ -108,6 +113,7 @@ export class TaxPaymentsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.remove(ctx, id);
   }
@@ -123,6 +129,7 @@ export class TaxPaymentsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.pay(ctx, id, dto);
   }

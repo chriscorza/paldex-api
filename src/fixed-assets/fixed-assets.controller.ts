@@ -33,6 +33,7 @@ import {
 const ctxOf = (user: { id: number }, request: any): OwnershipContext => ({
   userId: user.id,
   scope: request.permissionScope || 'OWN',
+  ownerUserId: request.booksOwnerId,
 });
 
 @ApiTags('fixed-assets')

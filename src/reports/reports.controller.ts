@@ -84,6 +84,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.incomeStatementService.getIncomeStatement(ctx, query);
   }
@@ -105,6 +106,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     const statement = await this.incomeStatementService.getIncomeStatement(
       ctx,
@@ -164,6 +166,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.dailySalesService.getDailySales(ctx, query);
   }
@@ -177,6 +180,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     const { startDate, endDate } = this.resolveDateRange(query);
     const aggregates = await this.aggregation.getMonthlyAggregates(
@@ -196,6 +200,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     const { startDate, endDate } = this.resolveDateRange(query);
     const prevStart = new Date(startDate);
@@ -221,6 +226,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     const { startDate, endDate } = this.resolveDateRange(query);
     return this.aggregation.getFiscalReport(ctx, startDate, endDate);
@@ -235,6 +241,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     const { startDate, endDate } = this.resolveDateRange(query);
     return this.aggregation.getPayrollReport(ctx, startDate, endDate);
@@ -245,6 +252,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.aggregation.getCashReport(ctx);
   }
@@ -258,6 +266,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     const { startDate, endDate } = this.resolveDateRange(query);
     return this.aggregation.getSalesWithoutCost(ctx, startDate, endDate);
@@ -302,6 +311,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.salesByEmployeeService.getSalesByEmployee(ctx, query);
   }
@@ -331,6 +341,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.inventoryCostService.getInventoryCost(ctx, query);
   }
@@ -359,6 +370,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.inventoryValuationService.getValuation(ctx, query);
   }
@@ -372,6 +384,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.shopifyService.getCategoryProfitability(ctx, query);
   }
@@ -385,6 +398,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.shopifyService.getProductProfitability(ctx, query);
   }
@@ -398,6 +412,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.shopifyService.getChannelProfitability(ctx, query);
   }
@@ -419,6 +434,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.shopifyService.getOrdersWithoutIncome(ctx, query);
   }
@@ -433,6 +449,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.lineItemProjection.recalculateCosts(startDate, endDate, ctx);
   }
@@ -446,6 +463,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     if (!periods)
       throw new BadRequestException(
@@ -467,6 +485,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     const months = parseInt(monthsStr || '12', 10);
     return this.comparisonService.trends(ctx, months);
@@ -491,6 +510,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     const { startDate, endDate } = this.resolveDateRange(query);
     const aggregates = await this.aggregation.getMonthlyAggregates(
@@ -576,6 +596,7 @@ export class ReportsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     const { startDate, endDate } = this.resolveDateRange(query);
     const aggregates = await this.aggregation.getMonthlyAggregates(

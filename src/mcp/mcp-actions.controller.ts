@@ -32,7 +32,9 @@ export class McpActionsController {
   ) {
     const scope = request.permissionScope || 'OWN';
     const where: Prisma.McpActionWhereInput = {
-      ...(scope === 'OWN' ? { owner_user_id: user.id } : {}),
+      ...(scope === 'OWN'
+        ? { owner_user_id: request.booksOwnerId ?? user.id }
+        : {}),
       ...(query.entity ? { entity: query.entity } : {}),
       ...(query.tool ? { tool: query.tool } : {}),
     };

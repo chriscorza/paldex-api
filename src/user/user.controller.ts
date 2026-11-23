@@ -15,6 +15,7 @@ import { RequirePermissions } from '../auth/permissions.decorator';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PrismaService } from '../prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { SetBooksOwnerDto } from './dto/set-books-owner.dto';
 import { AssignRoleDto } from './dto/assign-role.dto';
 
 @ApiTags('user')
@@ -69,6 +70,21 @@ export class UserController {
     @Body() dto: AssignRoleDto,
   ) {
     return this.userService.assignRole(id, dto.role_id);
+  }
+
+  @Patch(':id/books-owner')
+  @RequirePermissions('user:assign_role')
+  @ApiOperation({
+    summary: 'Ligar una cuenta a los libros de otra (socio del mismo negocio)',
+    description:
+      'Desde la siguiente petición el usuario lee y escribe en los libros de books_owner_id. ' +
+      'Se rechaza si la cuenta ya tiene datos propios. null lo devuelve a sus propios libros.',
+  })
+  setBooksOwner(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetBooksOwnerDto,
+  ) {
+    return this.userService.setBooksOwner(id, dto.books_owner_id);
   }
 
   @Get('me/permissions')

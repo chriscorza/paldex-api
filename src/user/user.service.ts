@@ -186,4 +186,140 @@ export class UserService {
 
     return updated;
   }
+
+  /*
+   * Liga (o desliga, con null) una cuenta a los libros de otra: un socio del
+   * mismo negocio. Desde la siguiente petición lee y escribe en los libros del
+   * dueño (PermissionsGuard -> OwnershipContext.ownerUserId).
+   *
+   * Sólo se liga una cuenta sin libros propios: si ya registró algo, moverlo es
+   * una decisión aparte y aquí se rechaza con el detalle. Sus categorías del
+   * sistema, sembradas al arrancar y sin uso, se borran: en adelante usa las
+   * del dueño.
+   */
+  async setBooksOwner(
+    userId: number,
+    booksOwnerId: number | null,
+  ): Promise<SafeUser> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, book_members: { select: { id: true } } },
+    });
+    if (!user) throw new NotFoundException(`User with id ${userId} not found`);
+
+    if (booksOwnerId === null) {
+      return this.prisma.user.update({
+        where: { id: userId },
+        data: { books_owner_id: null },
+        select: USER_SELECT,
+      });
+    }
+
+    if (booksOwnerId === userId) {
+      throw new BadRequestException(
+        'Para trabajar en sus propios libros manda books_owner_id: null',
+      );
+    }
+    const owner = await this.prisma.user.findUnique({
+      where: { id: booksOwnerId },
+      select: { id: true, books_owner_id: true },
+    });
+    if (!owner) {
+      throw new BadRequestException(`User with id ${booksOwnerId} not found`);
+    }
+    if (owner.books_owner_id !== null) {
+      throw new BadRequestException(
+        `La cuenta ${booksOwnerId} trabaja a su vez en los libros de la ${owner.books_owner_id}: liga a esa`,
+      );
+    }
+    if (user.book_members.length) {
+      throw new ConflictException(
+        `Otras cuentas trabajan en los libros de la ${userId} (${user.book_members.map((m) => m.id).join(', ')}): desligalas primero`,
+      );
+    }
+
+    const own = await this.ownBookData(userId);
+    const nonEmpty = Object.entries(own).filter(([, n]) => n > 0);
+    if (nonEmpty.length) {
+      throw new ConflictException(
+        `La cuenta ${userId} ya tiene datos en sus propios libros (${nonEmpty
+          .map(([k, n]) => `${k}: ${n}`)
+          .join(
+            ', ',
+          )}); hay que pasarlos a los libros del dueño antes de ligarla`,
+      );
+    }
+
+    // recurring_expenses.category_id no es relación en el esquema: se consulta aparte,
+    // en todas las cuentas (una plantilla ajena pudo elegirla mientras se veían todas).
+    const usedByTemplates = (
+      await this.prisma.recurringExpense.findMany({
+        select: { category_id: true },
+        distinct: ['category_id'],
+      })
+    ).map((r) => r.category_id);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.expenseCategory.deleteMany({
+        where: {
+          user_id: userId,
+          is_system: true,
+          expenses: { none: {} },
+          id: { notIn: usedByTemplates },
+        },
+      });
+      return tx.user.update({
+        where: { id: userId },
+        data: { books_owner_id: booksOwnerId },
+        select: USER_SELECT,
+      });
+    });
+  }
+
+  /* Lo que una cuenta tiene en sus propios libros. Las categorías del sistema no cuentan. */
+  private async ownBookData(userId: number) {
+    const w = { user_id: userId };
+    const p = this.prisma;
+    const [
+      expenses,
+      incomes,
+      accounts,
+      employees,
+      tax_payments,
+      recurring_expenses,
+      payables,
+      receivables,
+      fixed_assets,
+      product_costs,
+      shopify_connections,
+      custom_categories,
+    ] = await Promise.all([
+      p.expense.count({ where: w }),
+      p.income.count({ where: w }),
+      p.account.count({ where: w }),
+      p.employee.count({ where: w }),
+      p.taxPayment.count({ where: w }),
+      p.recurringExpense.count({ where: w }),
+      p.payable.count({ where: w }),
+      p.receivable.count({ where: w }),
+      p.fixedAsset.count({ where: w }),
+      p.productCost.count({ where: w }),
+      p.shopifyConnection.count({ where: w }),
+      p.expenseCategory.count({ where: { ...w, is_system: false } }),
+    ]);
+    return {
+      expenses,
+      incomes,
+      accounts,
+      employees,
+      tax_payments,
+      recurring_expenses,
+      payables,
+      receivables,
+      fixed_assets,
+      product_costs,
+      shopify_connections,
+      custom_categories,
+    };
+  }
 }

@@ -15,7 +15,11 @@ import {
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '../auth/permissions.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { OwnershipContext, buildOwnerFilter } from '../common/ownership';
+import {
+  OwnershipContext,
+  buildOwnerFilter,
+  effectiveOwnerId,
+} from '../common/ownership';
 import { PrismaService } from '../prisma.service';
 import { ProductCostsService } from './product-costs.service';
 import {
@@ -49,6 +53,7 @@ export class ProductCostsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.findAll(ctx, filters);
   }
@@ -64,6 +69,7 @@ export class ProductCostsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.getMissing(ctx, startDate, endDate);
   }
@@ -78,6 +84,7 @@ export class ProductCostsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.findOne(ctx, id);
   }
@@ -92,6 +99,7 @@ export class ProductCostsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.create(ctx, dto);
   }
@@ -106,6 +114,7 @@ export class ProductCostsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.bulkCreate(ctx, dto);
   }
@@ -121,6 +130,7 @@ export class ProductCostsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.update(ctx, id, dto);
   }
@@ -135,6 +145,7 @@ export class ProductCostsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.remove(ctx, id);
   }
@@ -149,6 +160,7 @@ export class ProductCostsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     const where: any = { ...buildOwnerFilter(ctx) };
     const page = filters.page || 1;
@@ -176,10 +188,11 @@ export class ProductCostsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     const existing = await this.prisma.productCategoryOverride.findFirst({
       where: {
-        user_id: ctx.userId,
+        user_id: effectiveOwnerId(ctx),
         shopify_product_id: dto.shopify_product_id,
       },
     });
@@ -189,7 +202,7 @@ export class ProductCostsController {
       data: {
         shopify_product_id: dto.shopify_product_id,
         category_name: dto.category_name,
-        user_id: ctx.userId,
+        user_id: effectiveOwnerId(ctx),
       },
     });
   }
@@ -203,7 +216,7 @@ export class ProductCostsController {
     @Body() dto: UpdateProductCategoryOverrideDto,
   ) {
     const existing = await this.prisma.productCategoryOverride.findFirst({
-      where: { id, user_id: user.id },
+      where: { id, user_id: request.booksOwnerId ?? user.id },
     });
     if (!existing) throw new NotFoundException('Override not found');
     return this.prisma.productCategoryOverride.update({
@@ -220,7 +233,7 @@ export class ProductCostsController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     const existing = await this.prisma.productCategoryOverride.findFirst({
-      where: { id, user_id: user.id },
+      where: { id, user_id: request.booksOwnerId ?? user.id },
     });
     if (!existing) throw new NotFoundException('Override not found');
     await this.prisma.productCategoryOverride.delete({ where: { id } });

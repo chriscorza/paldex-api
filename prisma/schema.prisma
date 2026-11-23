@@ -24,6 +24,10 @@ model User {
   created_at               DateTime                  @default(now())
   role_id                  Int?
   role                     Role?                     @relation(fields: [role_id], references: [id])
+  /// Libros en los que trabaja esta cuenta (un socio del mismo negocio). Nulo = los suyos.
+  books_owner_id           Int?
+  books_owner              User?                     @relation("BooksOwner", fields: [books_owner_id], references: [id], onDelete: SetNull)
+  book_members             User[]                    @relation("BooksOwner")
   accounts                 Account[]
   expenses                 Expense[]
   incomes                  Income[]

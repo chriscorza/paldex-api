@@ -32,10 +32,15 @@ export class PayrollController {
 
   /*
    * Falla cerrado: sin `permissionScope` (guard roto) cae en OWN. `ownerUserId`
-   * no se rellena en REST; sólo las llaves MCP lo traen.
+   * viene de `users.books_owner_id` (un socio ligado a otros libros); si no hay,
+   * son los libros del propio usuario.
    */
   private ctxOf(user: { id: number }, request: any): OwnershipContext {
-    return { userId: user.id, scope: request.permissionScope || 'OWN' };
+    return {
+      userId: user.id,
+      scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
+    };
   }
 
   @Post('generate')

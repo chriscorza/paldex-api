@@ -37,6 +37,7 @@ export class InventoryController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     const snapshots = await this.snapshots.captureForOwner(ctx);
     return snapshots.map((snapshot) => new InventorySnapshotEntity(snapshot));
@@ -60,6 +61,7 @@ export class InventoryController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.snapshots.listSnapshots(ctx, query);
   }

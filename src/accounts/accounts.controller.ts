@@ -36,6 +36,7 @@ export class AccountsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'ANY',
+      ownerUserId: request.booksOwnerId,
     };
     return this.accountsService.create(ctx, dto);
   }
@@ -49,6 +50,7 @@ export class AccountsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'ANY',
+      ownerUserId: request.booksOwnerId,
     };
     return this.accountsService.findAll(ctx, filters);
   }
@@ -62,6 +64,7 @@ export class AccountsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'ANY',
+      ownerUserId: request.booksOwnerId,
     };
     return this.accountsService.findOne(ctx, id);
   }
@@ -77,6 +80,7 @@ export class AccountsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'ANY',
+      ownerUserId: request.booksOwnerId,
     };
     return this.accountsService.update(ctx, id, dto);
   }
@@ -91,6 +95,7 @@ export class AccountsController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'ANY',
+      ownerUserId: request.booksOwnerId,
     };
     return this.accountsService.remove(ctx, id);
   }

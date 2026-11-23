@@ -20,7 +20,11 @@ export class MonthlyCloseController {
     @Query() q: ListMonthlyCloseDto,
   ) {
     return this.service.findAll(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       q,
     );
   }
@@ -33,7 +37,11 @@ export class MonthlyCloseController {
     @Param('month') month: string,
   ) {
     return this.service.findOne(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       parseInt(year),
       parseInt(month),
     );
@@ -47,7 +55,11 @@ export class MonthlyCloseController {
     @Param('month') month: string,
   ) {
     return this.service.preflight(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       parseInt(year),
       parseInt(month),
     );
@@ -61,7 +73,11 @@ export class MonthlyCloseController {
     @Param('month') month: string,
   ) {
     return this.service.checkIntegrity(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       parseInt(year),
       parseInt(month),
     );
@@ -76,7 +92,11 @@ export class MonthlyCloseController {
     @Param('month') month: string,
   ) {
     return this.service.review(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       parseInt(year),
       parseInt(month),
     );
@@ -91,7 +111,11 @@ export class MonthlyCloseController {
     @Param('month') month: string,
   ) {
     return this.service.close(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       parseInt(year),
       parseInt(month),
       u.id,
@@ -108,7 +132,11 @@ export class MonthlyCloseController {
     @Body() body: { reason: string },
   ) {
     return this.service.reopen(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       parseInt(year),
       parseInt(month),
       body.reason,

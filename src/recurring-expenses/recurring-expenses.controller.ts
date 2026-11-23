@@ -38,6 +38,7 @@ export class RecurringExpensesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.findAll(ctx, page, limit);
   }
@@ -51,6 +52,7 @@ export class RecurringExpensesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.findOne(ctx, id);
   }
@@ -65,6 +67,7 @@ export class RecurringExpensesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.create(ctx, dto);
   }
@@ -79,6 +82,7 @@ export class RecurringExpensesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.generate(ctx, dto);
   }
@@ -94,6 +98,7 @@ export class RecurringExpensesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.update(ctx, id, dto);
   }
@@ -108,6 +113,7 @@ export class RecurringExpensesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.remove(ctx, id);
   }

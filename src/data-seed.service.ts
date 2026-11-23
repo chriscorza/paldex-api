@@ -13,7 +13,11 @@ export class DataSeedService implements OnModuleInit {
     // Las cuentas de servicio del asistente (`@agente.paldex.local`) no llevan
     // libros propios: escriben en los de su dueño, así que no se les siembra nada.
     const users = await this.prisma.user.findMany({
-      where: { NOT: { email: { endsWith: '@agente.paldex.local' } } },
+      // Tampoco a un socio ligado a otros libros (books_owner_id): usa los del dueño.
+      where: {
+        books_owner_id: null,
+        NOT: { email: { endsWith: '@agente.paldex.local' } },
+      },
       take: 100,
     });
 

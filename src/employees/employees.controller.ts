@@ -37,6 +37,7 @@ export class EmployeesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.findAll(ctx, filters);
   }
@@ -50,6 +51,7 @@ export class EmployeesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.findOne(ctx, id);
   }
@@ -64,6 +66,7 @@ export class EmployeesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.create(ctx, dto);
   }
@@ -79,6 +82,7 @@ export class EmployeesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.update(ctx, id, dto);
   }
@@ -93,6 +97,7 @@ export class EmployeesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.remove(ctx, id);
   }
@@ -109,6 +114,7 @@ export class EmployeesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: request.permissionScope || 'OWN',
+      ownerUserId: request.booksOwnerId,
     };
     return this.service.findPayments(ctx, id, startDate, endDate, status);
   }

@@ -30,7 +30,11 @@ export class ReceivablesController {
     @Query() q: any,
   ) {
     return this.service.findAll(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       q,
     );
   }
@@ -40,7 +44,11 @@ export class ReceivablesController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     return this.service.findOne(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       id,
     );
   }
@@ -50,7 +58,11 @@ export class ReceivablesController {
     @Body() d: CreateReceivableDto,
   ) {
     return this.service.create(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       d,
     );
   }
@@ -61,7 +73,11 @@ export class ReceivablesController {
     @Body() d: UpdateReceivableDto,
   ) {
     return this.service.update(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       id,
       d,
     );
@@ -72,7 +88,11 @@ export class ReceivablesController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     return this.service.remove(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       id,
     );
   }
@@ -85,7 +105,11 @@ export class ReceivablesController {
     @Body() d: AddReceivableCollectionDto,
   ) {
     return this.service.addCollection(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       id,
       d,
     );
@@ -98,7 +122,11 @@ export class ReceivablesController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     return this.service.removeCollection(
-      { userId: u.id, scope: r.permissionScope || 'OWN' },
+      {
+        userId: u.id,
+        scope: r.permissionScope || 'OWN',
+        ownerUserId: r.booksOwnerId,
+      },
       id,
     );
   }

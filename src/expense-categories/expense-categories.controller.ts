@@ -38,6 +38,7 @@ export class ExpenseCategoriesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.service.findAll(ctx, filters);
   }
@@ -51,6 +52,7 @@ export class ExpenseCategoriesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.service.findOne(ctx, id);
   }
@@ -65,6 +67,7 @@ export class ExpenseCategoriesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.service.create(ctx, dto);
   }
@@ -80,6 +83,7 @@ export class ExpenseCategoriesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.service.update(ctx, id, dto);
   }
@@ -94,6 +98,7 @@ export class ExpenseCategoriesController {
     const ctx: OwnershipContext = {
       userId: user.id,
       scope: (request as any).permissionScope || 'OWN',
+      ownerUserId: (request as any).booksOwnerId,
     };
     return this.service.remove(ctx, id);
   }
