@@ -80,6 +80,7 @@ export class RecurringExpensesService {
     return new RecurringExpenseEntity(
       await this.prisma.recurringExpense.create({
         data: {
+          created_by: ctx.userId,
           concept: dto.concept,
           amount: dto.amount,
           category_id: dto.category_id,

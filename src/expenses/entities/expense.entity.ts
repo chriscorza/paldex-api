@@ -36,7 +36,13 @@ export class ExpenseEntity {
   taxes: ExpenseTaxEntity[];
   category: ExpenseCategorySummaryEntity | null;
 
+  /** Quién lo capturó; null = sistema (Shopify, generadores) o histórico. */
+  created_by: number | null;
+  creator: { id: number; name: string | null; email: string } | null;
+
   constructor(partial: any) {
+    this.created_by = partial.created_by ?? null;
+    this.creator = partial.creator ?? null;
     this.id = partial.id;
     this.amount = toMoneyNumber(partial.amount) ?? 0;
     this.concept = partial.concept;
@@ -71,6 +77,7 @@ export class ExpenseEntity {
 export const EXPENSE_PUBLIC_INCLUDE = {
   taxes: { include: { tax: true } },
   category: { select: { id: true, name: true, type: true } },
+  creator: { select: { id: true, name: true, email: true } },
 } as const;
 
 export interface PaginatedExpenseResponse {

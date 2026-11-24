@@ -41,6 +41,7 @@ export class TaxPaymentsService {
 
     const payment = await this.prisma.taxPayment.create({
       data: {
+        created_by: ctx.userId,
         type: dto.type,
         tax_id: dto.tax_id ?? null,
         fiscal_period_start: new Date(dto.fiscal_period_start),

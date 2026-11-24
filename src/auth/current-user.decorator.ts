@@ -13,3 +13,16 @@ export const CurrentUser = createParamDecorator(
     return request.user as { id: number; email: string };
   },
 );
+
+/*
+ * De quién son los libros que toca esta petición: el dueño si el usuario es un
+ * socio ligado (`users.books_owner_id`, lo deja PermissionsGuard), si no él
+ * mismo. Para lo que no pasa por OwnershipContext, como la conexión de Shopify:
+ * una sola tienda por negocio, la administre quien la administre.
+ */
+export const BooksOwnerId = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): number => {
+    const request = ctx.switchToHttp().getRequest();
+    return request.booksOwnerId ?? request.user.id;
+  },
+);

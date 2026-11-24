@@ -48,6 +48,14 @@ model User {
   mcpApiKeys               McpApiKey[]               @relation("McpApiKeyOwner")
   mcpApiKeysIssued         McpApiKey[]               @relation("McpApiKeyCreatedBy")
   mcpApiKeysOwned          McpApiKey[]               @relation("McpApiKeyBooksOwner")
+  createdExpenses          Expense[]                 @relation("ExpenseCreatedBy")
+  createdIncomes           Income[]                  @relation("IncomeCreatedBy")
+  createdPayables          Payable[]                 @relation("PayableCreatedBy")
+  createdReceivables       Receivable[]              @relation("ReceivableCreatedBy")
+  createdTaxPayments       TaxPayment[]              @relation("TaxPaymentCreatedBy")
+  createdPayrollPayments   PayrollPayment[]          @relation("PayrollPaymentCreatedBy")
+  createdFixedAssets       FixedAsset[]              @relation("FixedAssetCreatedBy")
+  createdRecurringExpenses RecurringExpense[]        @relation("RecurringExpenseCreatedBy")
 
   @@map("users")
 }
@@ -418,6 +426,9 @@ model Expense {
   recurring   RecurringExpense? @relation(fields: [recurring_expense_id], references: [id])
   taxes       ExpenseTax[]
   fixedAssets FixedAsset[]
+  /// Quién lo capturó (persona o cuenta del asistente). Nulo = sistema (Shopify, generadores) o histórico.
+  created_by  Int?
+  creator     User?             @relation("ExpenseCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
 
   @@unique([recurring_expense_id, scheduled_due_date])
   @@index([user_id])
@@ -463,6 +474,9 @@ model Income {
   taxes         IncomeTax[]
   shopify_order ShopifyOrder?     @relation(fields: [shopify_order_id], references: [id])
   cogs          CostOfGoodsSold[]
+  /// Quién lo capturó (persona o cuenta del asistente). Nulo = sistema (Shopify, generadores) o histórico.
+  created_by    Int?
+  creator       User?             @relation("IncomeCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
 
   @@unique([source, external_transaction_id])
   @@index([user_id])
@@ -566,8 +580,11 @@ model PayrollPayment {
   notes                  String?
   created_at             DateTime      @default(now())
 
-  employee Employee @relation(fields: [employee_id], references: [id], onDelete: Cascade)
-  account  Account? @relation(fields: [account_id], references: [id])
+  employee   Employee @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  account    Account? @relation(fields: [account_id], references: [id])
+  /// Quién lo capturó (persona o cuenta del asistente). Nulo = sistema (Shopify, generadores) o histórico.
+  created_by Int?
+  creator    User?    @relation("PayrollPaymentCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
 
   @@unique([employee_id, scheduled_pay_date, period_start, period_end])
   @@index([scheduled_pay_date])
@@ -604,8 +621,11 @@ model TaxPayment {
   user_id             Int
   created_at          DateTime         @default(now())
 
-  user    User    @relation(fields: [user_id], references: [id])
-  account Account @relation(fields: [account_id], references: [id])
+  user       User    @relation(fields: [user_id], references: [id])
+  account    Account @relation(fields: [account_id], references: [id])
+  /// Quién lo capturó (persona o cuenta del asistente). Nulo = sistema (Shopify, generadores) o histórico.
+  created_by Int?
+  creator    User?   @relation("TaxPaymentCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
 
   @@index([paid_at])
   @@index([fiscal_period_start])
@@ -663,8 +683,11 @@ model RecurringExpense {
   user_id                 Int
   created_at              DateTime           @default(now())
 
-  user     User      @relation(fields: [user_id], references: [id])
-  expenses Expense[]
+  user       User      @relation(fields: [user_id], references: [id])
+  expenses   Expense[]
+  /// Quién lo capturó (persona o cuenta del asistente). Nulo = sistema (Shopify, generadores) o histórico.
+  created_by Int?
+  creator    User?     @relation("RecurringExpenseCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
 
   @@index([user_id])
   @@map("recurring_expenses")
@@ -691,8 +714,11 @@ model Payable {
   user_id      Int
   created_at   DateTime      @default(now())
 
-  user     User             @relation(fields: [user_id], references: [id])
-  payments PayablePayment[]
+  user       User             @relation(fields: [user_id], references: [id])
+  payments   PayablePayment[]
+  /// Quién lo capturó (persona o cuenta del asistente). Nulo = sistema (Shopify, generadores) o histórico.
+  created_by Int?
+  creator    User?            @relation("PayableCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
 
   @@index([due_date])
   @@index([status])
@@ -737,6 +763,9 @@ model Receivable {
 
   user        User                   @relation(fields: [user_id], references: [id])
   collections ReceivableCollection[]
+  /// Quién lo capturó (persona o cuenta del asistente). Nulo = sistema (Shopify, generadores) o histórico.
+  created_by  Int?
+  creator     User?                  @relation("ReceivableCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
 
   @@index([due_date])
   @@index([user_id])
@@ -886,8 +915,11 @@ model FixedAsset {
   created_at         DateTime        @default(now())
   updated_at         DateTime        @updatedAt
 
-  user    User     @relation(fields: [user_id], references: [id])
-  expense Expense? @relation(fields: [expense_id], references: [id], onDelete: SetNull)
+  user       User     @relation(fields: [user_id], references: [id])
+  expense    Expense? @relation(fields: [expense_id], references: [id], onDelete: SetNull)
+  /// Quién lo capturó (persona o cuenta del asistente). Nulo = sistema (Shopify, generadores) o histórico.
+  created_by Int?
+  creator    User?    @relation("FixedAssetCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
 
   @@index([user_id])
   @@index([in_service_at])

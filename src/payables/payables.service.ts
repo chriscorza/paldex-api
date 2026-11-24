@@ -86,6 +86,7 @@ export class PayablesService {
   async create(ctx: OwnershipContext, dto: CreatePayableDto) {
     return this.prisma.payable.create({
       data: {
+        created_by: ctx.userId,
         vendor: dto.vendor,
         concept: dto.concept,
         total_amount: dto.total_amount,

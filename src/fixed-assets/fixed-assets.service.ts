@@ -100,7 +100,7 @@ export class FixedAssetsService {
     if (data.expense_id) await this.assertCapexExpense(ctx, data.expense_id);
 
     const row = await this.prisma.fixedAsset.create({
-      data: { ...data, user_id: effectiveOwnerId(ctx) },
+      data: { ...data, user_id: effectiveOwnerId(ctx), created_by: ctx.userId },
     });
     return this.project(row, new Date());
   }

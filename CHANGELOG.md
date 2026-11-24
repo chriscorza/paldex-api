@@ -18,6 +18,17 @@ Este archivo es la **fuente de verdad de la versión del producto**: la entrada 
 reciente es la versión vigente, y `package.json` debe coincidir con ella. Hay una
 prueba que falla si se separan.
 
+## [1.8.0] - 2026-11-23
+
+### Added
+- Cada gasto e ingreso dice quién lo registró (columna «Registró»): tú, tu socio o el asistente de
+  IA. Lo que llega de Shopify o se genera solo aparece como «Sistema». Lo registrado antes de hoy
+  queda a nombre del dueño de los libros. También se guarda en cuentas por pagar y por cobrar,
+  impuestos, nómina, activos fijos y gastos recurrentes.
+
+### Fixed
+- Un socio ligado a tus libros ve y administra la misma conexión de Shopify que tú.
+
 ## [1.7.0] - 2026-11-23
 
 ### Added

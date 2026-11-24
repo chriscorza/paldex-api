@@ -152,6 +152,7 @@ export class PayrollService {
 
     const payment = await this.prisma.payrollPayment.create({
       data: {
+        created_by: ctx.userId,
         employee_id: dto.employee_id,
         period_start: new Date(dto.period_start),
         period_end: new Date(dto.period_end),

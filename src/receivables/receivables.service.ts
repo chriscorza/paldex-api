@@ -77,6 +77,7 @@ export class ReceivablesService {
   async create(ctx: OwnershipContext, dto: CreateReceivableDto) {
     return this.prisma.receivable.create({
       data: {
+        created_by: ctx.userId,
         customer: dto.customer,
         concept: dto.concept,
         total_amount: dto.total_amount,

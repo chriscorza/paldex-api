@@ -195,6 +195,21 @@ describe('ExpensesService', () => {
       );
     });
 
+    it('books it to the owner and credits the person who captured it', async () => {
+      prisma.account.findFirst.mockResolvedValue(mockAccount);
+      prisma.tax.count.mockResolvedValue(2);
+      prisma.expense.create.mockResolvedValue(mockExpense);
+
+      await service.create(
+        { userId: 2, scope: 'ANY', ownerUserId: 1 },
+        createDto,
+      );
+
+      const data = prisma.expense.create.mock.calls[0][0].data;
+      expect(data.user_id).toBe(1);
+      expect(data.created_by).toBe(2);
+    });
+
     it('should reject invalid account_id', async () => {
       prisma.account.findFirst.mockResolvedValue(null);
 

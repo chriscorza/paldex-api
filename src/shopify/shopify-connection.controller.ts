@@ -28,7 +28,7 @@ import { ShopifyReconciliationService } from './shopify-reconciliation.service';
 import { InstallShopifyDto } from './dto/install-shopify.dto';
 import { UpdateGatewayAccountsDto } from './dto/update-gateway-accounts.dto';
 import { RequirePermissions } from '../auth/permissions.decorator';
-import { CurrentUser } from '../auth/current-user.decorator';
+import { BooksOwnerId } from '../auth/current-user.decorator';
 import { Public } from '../auth/auth.decorator';
 import { ShopifyWebhookGuard } from './shopify-webhook.guard';
 
@@ -60,10 +60,10 @@ export class ShopifyConnectionController {
     },
   })
   async install(
-    @CurrentUser() user: { id: number; email: string },
+    @BooksOwnerId() ownerId: number,
     @Body() dto: InstallShopifyDto,
   ) {
-    return this.shopifyService.install(user.id, dto);
+    return this.shopifyService.install(ownerId, dto);
   }
 
   @Get('connections')
@@ -72,8 +72,8 @@ export class ShopifyConnectionController {
     summary: 'Listar las tiendas Shopify conectadas por el usuario',
     description: 'Nunca incluye el access_token, ni cifrado ni en claro.',
   })
-  findConnections(@CurrentUser() user: { id: number; email: string }) {
-    return this.shopifyService.findConnections(user.id);
+  findConnections(@BooksOwnerId() ownerId: number) {
+    return this.shopifyService.findConnections(ownerId);
   }
 
   @Delete('connections/:id')
@@ -84,10 +84,10 @@ export class ShopifyConnectionController {
       'Marca la conexión como REVOKED. Los Income y ShopifyOrder ya generados por esa tienda NO se borran.',
   })
   revokeConnection(
-    @CurrentUser() user: { id: number; email: string },
+    @BooksOwnerId() ownerId: number,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    return this.shopifyService.revokeConnection(user.id, id);
+    return this.shopifyService.revokeConnection(ownerId, id);
   }
 
   @Get('connections/:id/gateway-accounts')
@@ -99,10 +99,10 @@ export class ShopifyConnectionController {
       'para que el usuario sepa qué gateways existen sin tener que adivinarlos.',
   })
   getGatewayAccounts(
-    @CurrentUser() user: { id: number; email: string },
+    @BooksOwnerId() ownerId: number,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    return this.shopifyService.getGatewayAccounts(user.id, id);
+    return this.shopifyService.getGatewayAccounts(ownerId, id);
   }
 
   @Get('connections/:id/available-gateways')
@@ -116,10 +116,10 @@ export class ShopifyConnectionController {
       '(los que devuelve GET gateway-accounts) están vacíos hasta la primera importación.',
   })
   discoverGateways(
-    @CurrentUser() user: { id: number; email: string },
+    @BooksOwnerId() ownerId: number,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    return this.shopifyService.discoverGateways(user.id, id);
+    return this.shopifyService.discoverGateways(ownerId, id);
   }
 
   @Put('connections/:id/gateway-accounts')
@@ -132,11 +132,11 @@ export class ShopifyConnectionController {
       'Los gateways no pueden repetirse. Cambiar un mapeo no reasigna incomes ya creados.',
   })
   updateGatewayAccounts(
-    @CurrentUser() user: { id: number; email: string },
+    @BooksOwnerId() ownerId: number,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateGatewayAccountsDto,
   ) {
-    return this.shopifyService.updateGatewayAccounts(user.id, id, dto);
+    return this.shopifyService.updateGatewayAccounts(ownerId, id, dto);
   }
 
   @Post('connections/:id/gateway-accounts/reapply')
@@ -150,12 +150,12 @@ export class ShopifyConnectionController {
       'Los ingresos con fecha en un mes cerrado no se tocan y se informan aparte.',
   })
   reapplyGatewayMapping(
-    @CurrentUser() user: { id: number; email: string },
+    @BooksOwnerId() ownerId: number,
     @Param('id', ParseIntPipe) id: number,
     @Query('dry_run') dryRun?: string,
   ) {
     return this.shopifyService.reapplyGatewayMapping(
-      user.id,
+      ownerId,
       id,
       dryRun === 'true',
     );
@@ -170,10 +170,10 @@ export class ShopifyConnectionController {
       'Idempotente: no duplica transacciones ya sincronizadas. Útil después de obtener nuevos scopes.',
   })
   async triggerBackfill(
-    @CurrentUser() user: { id: number; email: string },
+    @BooksOwnerId() ownerId: number,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    await this.shopifyService.verifyConnectionOwnership(user.id, id);
+    await this.shopifyService.verifyConnectionOwnership(ownerId, id);
     return this.backfillService.triggerBackfillEndpoint(id);
   }
 
@@ -188,10 +188,10 @@ export class ShopifyConnectionController {
       'Idempotente: si ya están bien, no toca nada.',
   })
   async resyncWebhooks(
-    @CurrentUser() user: { id: number; email: string },
+    @BooksOwnerId() ownerId: number,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    await this.shopifyService.verifyConnectionOwnership(user.id, id);
+    await this.shopifyService.verifyConnectionOwnership(ownerId, id);
     return this.shopifyService.resyncWebhooks(id);
   }
 

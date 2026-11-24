@@ -28,7 +28,13 @@ export class IncomeEntity {
   profit_gross: number | null;
   taxes: IncomeTaxEntity[];
 
+  /** Quién lo capturó; null = sistema (Shopify, generadores) o histórico. */
+  created_by: number | null;
+  creator: { id: number; name: string | null; email: string } | null;
+
   constructor(partial: any) {
+    this.created_by = partial.created_by ?? null;
+    this.creator = partial.creator ?? null;
     this.id = partial.id;
     this.amount = toMoneyNumber(partial.amount) ?? 0;
     this.concept = partial.concept;
@@ -73,6 +79,8 @@ export const INCOME_PUBLIC_SELECT = {
   cogs_total: true,
   profit_gross: true,
   taxes: { include: { tax: true } },
+  created_by: true,
+  creator: { select: { id: true, name: true, email: true } },
 } as const;
 
 export class PaginatedIncomeResponse {

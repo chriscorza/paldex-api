@@ -84,6 +84,7 @@ export class IncomesService {
     try {
       const income = await this.prisma.income.create({
         data: {
+          created_by: ctx.userId,
           user_id: effectiveOwnerId(ctx),
           amount: dto.amount,
           concept: dto.concept,
