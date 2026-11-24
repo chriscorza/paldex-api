@@ -18,7 +18,13 @@ Este archivo es la **fuente de verdad de la versión del producto**: la entrada 
 reciente es la versión vigente, y `package.json` debe coincidir con ella. Hay una
 prueba que falla si se separan.
 
-## [1.6.1] - 2026-11-23
+## [1.7.0] - 2026-11-23
+
+### Added
+- Libros compartidos con un socio: en Usuarios, «Ligar a otros libros» hace que una cuenta trabaje
+  en los libros de otra. Todo lo que registre tu socio cae en tus libros y ve lo mismo que tú,
+  incluidos los reportes y el asistente de IA. Sólo se puede ligar una cuenta que todavía no tenga
+  datos propios.
 
 ### Fixed
 - Las categorías de gasto ya no salen repetidas. Cada cuenta veía también las categorías «del
