@@ -19,6 +19,10 @@ import {
   buildOwnerFilter,
   effectiveOwnerId,
 } from '../common/ownership';
+import { startOfDayInZone } from '../common/timezone';
+
+/* Día de calendario anclado a la medianoche de la zona del negocio. */
+const toDay = (value: string) => startOfDayInZone(value.slice(0, 10));
 
 @Injectable()
 export class AccountsService {
@@ -90,6 +94,9 @@ export class AccountsService {
         currency: dto.currency ?? 'MXN',
         is_active: dto.is_active ?? true,
         initial_balance: dto.initial_balance ?? dto.balance,
+        initial_balance_at: dto.initial_balance_at
+          ? toDay(dto.initial_balance_at)
+          : null,
         user_id: effectiveOwnerId(ctx),
       },
     });
@@ -138,6 +145,10 @@ export class AccountsService {
     if (dto.is_active !== undefined) data.is_active = dto.is_active;
     if (dto.initial_balance !== undefined)
       data.initial_balance = dto.initial_balance;
+    if (dto.initial_balance_at !== undefined)
+      data.initial_balance_at = dto.initial_balance_at
+        ? toDay(dto.initial_balance_at)
+        : null;
 
     if (dto.type !== undefined) {
       if (dto.type !== 'CREDIT_CARD') {

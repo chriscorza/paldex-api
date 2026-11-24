@@ -18,6 +18,22 @@ Este archivo es la **fuente de verdad de la versión del producto**: la entrada 
 reciente es la versión vigente, y `package.json` debe coincidir con ella. Hay una
 prueba que falla si se separan.
 
+## [1.9.0] - 2026-11-24
+
+### Added
+- Traspasos entre cuentas: registra cuando pasas dinero de una cuenta a otra (por ejemplo, de
+  Mercado Pago a BBVA, o un depósito de efectivo al banco). No cuentan como ingreso ni como gasto;
+  sólo mueven el saldo de las dos cuentas. Si te cobraron comisión, se registra sola como gasto de
+  la cuenta de origen. Están en Cuentas → «Traspaso», y el asistente de IA también los puede
+  registrar.
+- Saldo inicial con fecha: indica el saldo de cada cuenta a un día (por ejemplo, el 1 de enero) y
+  el saldo calculado sólo suma lo que pasó desde entonces. Sirve para empezar limpio sin arrastrar
+  movimientos incompletos de antes.
+
+### Changed
+- El saldo calculado de cada cuenta ahora también suma los cobros a clientes y resta los pagos a
+  proveedores registrados en cuentas por cobrar y por pagar.
+
 ## [1.8.0] - 2026-11-23
 
 ### Added

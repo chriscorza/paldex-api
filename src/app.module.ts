@@ -26,6 +26,7 @@ import { ProductCostsModule } from './product-costs/product-costs.module';
 import { RecurringExpensesModule } from './recurring-expenses/recurring-expenses.module';
 import { PayablesModule } from './payables/payables.module';
 import { FixedAssetsModule } from './fixed-assets/fixed-assets.module';
+import { AccountTransfersModule } from './account-transfers/account-transfers.module';
 import { ReceivablesModule } from './receivables/receivables.module';
 import { MonthlyCloseModule } from './monthly-close/monthly-close.module';
 import { InvitationsModule } from './invitations/invitations.module';
@@ -64,6 +65,7 @@ import { VersionModule } from './version/version.module';
     RecurringExpensesModule,
     PayablesModule,
     FixedAssetsModule,
+    AccountTransfersModule,
     ReceivablesModule,
     MonthlyCloseModule,
     InvitationsModule,

@@ -475,6 +475,14 @@ export class ReportsAggregationService {
     };
   }
 
+  /*
+   * Saldo calculado de cada cuenta:
+   *   inicial + ingresos + traspasos recibidos + cobros
+   *           − gastos pagados − nómina − impuestos − traspasos enviados − pagos a proveedores
+   * Con `initial_balance_at`, sólo cuentan los movimientos desde ese día: el
+   * saldo inicial es el de esa mañana y lo anterior ya está dentro de él.
+   * Ver openspec/changes/add-account-transfers.
+   */
   async getCashReport(ctx: OwnershipContext) {
     const ownerFilter = buildOwnerFilter(ctx) as { user_id?: number };
 
@@ -485,43 +493,124 @@ export class ReportsAggregationService {
         name: true,
         balance: true,
         initial_balance: true,
+        initial_balance_at: true,
         is_active: true,
       },
     });
 
     const result = await Promise.all(
       accounts.map(async (account) => {
-        const [incomeSum, expenseSum, payrollSum, taxPaymentsSum] =
-          await Promise.all([
-            this.prisma.income.aggregate({
-              where: { ...ownerFilter, account_id: account.id },
-              _sum: { net_amount: true },
-            }),
-            this.prisma.expense.aggregate({
-              where: { ...ownerFilter, account_id: account.id, status: 'PAID' },
-              _sum: { amount: true },
-            }),
-            this.prisma.payrollPayment.aggregate({
-              where: {
-                employee: { ...ownerFilter },
-                account_id: account.id,
-                status: 'PAID',
-              },
-              _sum: { net_amount: true },
-            }),
-            this.prisma.taxPayment.aggregate({
-              where: { ...ownerFilter, account_id: account.id, status: 'PAID' },
-              _sum: { amount: true },
-            }),
-          ]);
+        const since = account.initial_balance_at;
+        const from = (field: string) =>
+          since ? { [field]: { gte: since } } : {};
+
+        const [
+          incomeSum,
+          expenseSum,
+          payrollSum,
+          taxPaymentsSum,
+          transfersInSum,
+          transfersOutSum,
+          payablePaymentsSum,
+          collectionsSum,
+        ] = await Promise.all([
+          this.prisma.income.aggregate({
+            where: { ...ownerFilter, account_id: account.id, ...from('date') },
+            _sum: { net_amount: true },
+          }),
+          this.prisma.expense.aggregate({
+            where: {
+              ...ownerFilter,
+              account_id: account.id,
+              status: 'PAID',
+              ...(since
+                ? {
+                    OR: [
+                      { paid_at: { gte: since } },
+                      { paid_at: null, date: { gte: since } },
+                    ],
+                  }
+                : {}),
+            },
+            _sum: { amount: true },
+          }),
+          this.prisma.payrollPayment.aggregate({
+            where: {
+              employee: { ...ownerFilter },
+              account_id: account.id,
+              status: 'PAID',
+              ...from('paid_at'),
+            },
+            _sum: { net_amount: true },
+          }),
+          this.prisma.taxPayment.aggregate({
+            where: {
+              ...ownerFilter,
+              account_id: account.id,
+              status: 'PAID',
+              ...from('paid_at'),
+            },
+            _sum: { amount: true },
+          }),
+          this.prisma.accountTransfer.aggregate({
+            where: {
+              ...ownerFilter,
+              to_account_id: account.id,
+              ...from('date'),
+            },
+            _sum: { amount: true },
+          }),
+          this.prisma.accountTransfer.aggregate({
+            where: {
+              ...ownerFilter,
+              from_account_id: account.id,
+              ...from('date'),
+            },
+            _sum: { amount: true },
+          }),
+          this.prisma.payablePayment.aggregate({
+            where: {
+              account_id: account.id,
+              ...(ownerFilter.user_id ? { payable: ownerFilter } : {}),
+              ...from('paid_at'),
+            },
+            _sum: { amount: true },
+          }),
+          this.prisma.receivableCollection.aggregate({
+            where: {
+              account_id: account.id,
+              ...(ownerFilter.user_id ? { receivable: ownerFilter } : {}),
+              ...from('collected_at'),
+            },
+            _sum: { amount: true },
+          }),
+        ]);
+
+        const movements = {
+          incomes: Number(incomeSum._sum?.net_amount ?? 0),
+          transfers_in: Number(transfersInSum._sum?.amount ?? 0),
+          receivable_collections: Number(collectionsSum._sum?.amount ?? 0),
+          expenses: Number(expenseSum._sum?.amount ?? 0),
+          payroll: Number(payrollSum._sum?.net_amount ?? 0),
+          taxes: Number(taxPaymentsSum._sum?.amount ?? 0),
+          transfers_out: Number(transfersOutSum._sum?.amount ?? 0),
+          payable_payments: Number(payablePaymentsSum._sum?.amount ?? 0),
+        };
 
         const initial = Number(account.initial_balance);
-        const incomes = Number(incomeSum._sum?.net_amount ?? 0);
-        const expenses = Number(expenseSum._sum?.amount ?? 0);
-        const payroll = Number(payrollSum._sum?.net_amount ?? 0);
-        const taxes = Number(taxPaymentsSum._sum?.amount ?? 0);
-
-        const computed = initial + incomes - expenses - payroll - taxes;
+        const computed =
+          Math.round(
+            (initial +
+              movements.incomes +
+              movements.transfers_in +
+              movements.receivable_collections -
+              movements.expenses -
+              movements.payroll -
+              movements.taxes -
+              movements.transfers_out -
+              movements.payable_payments) *
+              100,
+          ) / 100;
         const stored = Number(account.balance);
         const drift = Math.round((stored - computed) * 100) / 100;
 
@@ -529,6 +618,9 @@ export class ReportsAggregationService {
           account_id: account.id,
           name: account.name,
           is_active: account.is_active,
+          initial_balance: initial,
+          initial_balance_at: since,
+          movements,
           computed_balance: computed,
           stored_balance: stored,
           drift,

@@ -1,5 +1,6 @@
 import { PrismaService } from '../../prisma.service';
 import { AccountsService } from '../../accounts/accounts.service';
+import { AccountTransfersService } from '../../account-transfers/account-transfers.service';
 import { CogsService } from '../../cogs/cogs.service';
 import { EmployeesService } from '../../employees/employees.service';
 import { ExpenseCategoriesService } from '../../expense-categories/expense-categories.service';
@@ -25,6 +26,7 @@ import { TaxesService } from '../../taxes/taxes.service';
 export interface McpServices {
   prisma: PrismaService;
   accounts: AccountsService;
+  accountTransfers: AccountTransfersService;
   cogs: CogsService;
   employees: EmployeesService;
   expenseCategories: ExpenseCategoriesService;

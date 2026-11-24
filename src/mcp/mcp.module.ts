@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from 'src/prisma.module';
 import { PermissionsModule } from '../permissions/permissions.module';
 import { AccountsModule } from '../accounts/accounts.module';
+import { AccountTransfersModule } from '../account-transfers/account-transfers.module';
 import { CogsModule } from '../cogs/cogs.module';
 import { EmployeesModule } from '../employees/employees.module';
 import { ExpenseCategoriesModule } from '../expense-categories/expense-categories.module';
@@ -40,6 +41,7 @@ import { McpToolkit } from './toolkit';
     PrismaModule,
     PermissionsModule,
     AccountsModule,
+    AccountTransfersModule,
     CogsModule,
     EmployeesModule,
     ExpenseCategoriesModule,

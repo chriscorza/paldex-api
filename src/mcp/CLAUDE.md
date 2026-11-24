@@ -14,8 +14,9 @@ Those modules are not even imported by `McpModule`, so no role permission can ma
 About 84 tools, one per action, declared per domain in `src/mcp/tools/<domain>.tools.ts`:
 `context`/`reports`, `expenses` (+ recurring), `incomes` (+ COGS), `debts` (payables, receivables),
 `taxes` (tax payments + tax catalog), `payroll` (+ employees), `assets` (fixed assets + product
-costs), `config` (accounts, expense categories). `mcp-tools.service.spec.ts` enumerates **every
-tool and every write tool**: adding one without touching that list fails the build.
+costs), `config` (accounts, expense categories), `transfers` (account transfers).
+`mcp-tools.service.spec.ts` enumerates **every tool and every write tool**: adding one without
+touching that list fails the build.
 
 **`PayrollPayment` is the only record of money paid to employees** and **`TaxPayment` the only
 record of taxes paid**: neither is ever an expense. An expense whose category has `type = PAYROLL`

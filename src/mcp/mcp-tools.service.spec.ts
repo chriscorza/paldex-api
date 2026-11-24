@@ -41,6 +41,7 @@ const READ_TOOLS = [
   'tax_payment_estimate',
   'tax_payments_list',
   'taxes_list',
+  'transfers_list',
 ];
 
 /*
@@ -105,6 +106,9 @@ WRITE_TOOLS.push(
   'tax_payment_pay',
   'tax_payment_update',
   'tax_update',
+  'transfer_create',
+  'transfer_delete',
+  'transfer_update',
 );
 
 /* Bitácora en memoria que respeta el índice único (owner, tool, client_ref). */

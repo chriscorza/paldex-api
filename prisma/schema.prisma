@@ -56,6 +56,8 @@ model User {
   createdPayrollPayments   PayrollPayment[]          @relation("PayrollPaymentCreatedBy")
   createdFixedAssets       FixedAsset[]              @relation("FixedAssetCreatedBy")
   createdRecurringExpenses RecurringExpense[]        @relation("RecurringExpenseCreatedBy")
+  accountTransfers         AccountTransfer[]         @relation("AccountTransferOwner")
+  createdAccountTransfers  AccountTransfer[]         @relation("AccountTransferCreatedBy")
 
   @@map("users")
 }
@@ -318,6 +320,9 @@ model Account {
   currency               String                  @default("MXN") @db.VarChar(3)
   is_active              Boolean                 @default(true)
   initial_balance        Decimal                 @default(0) @db.Decimal(14, 2)
+  /// Día del saldo inicial (medianoche en la zona del negocio). Con valor, el saldo
+  /// calculado sólo suma movimientos desde ese día; nulo = toda la historia.
+  initial_balance_at     DateTime?
   created_at             DateTime                @default(now())
   user_id                Int
   user                   User                    @relation(fields: [user_id], references: [id])
@@ -328,6 +333,8 @@ model Account {
   employees              Employee[]
   payrollPayments        PayrollPayment[]
   taxPayments            TaxPayment[]
+  transfersOut           AccountTransfer[]       @relation("AccountTransferFrom")
+  transfersIn            AccountTransfer[]       @relation("AccountTransferTo")
 
   @@index([user_id])
   @@map("accounts")
@@ -420,15 +427,17 @@ model Expense {
   scheduled_due_date   DateTime?
   is_recurring         Boolean   @default(false)
 
-  account     Account           @relation(fields: [account_id], references: [id])
-  user        User              @relation(fields: [user_id], references: [id])
-  category    ExpenseCategory?  @relation(fields: [category_id], references: [id])
-  recurring   RecurringExpense? @relation(fields: [recurring_expense_id], references: [id])
-  taxes       ExpenseTax[]
-  fixedAssets FixedAsset[]
+  account       Account           @relation(fields: [account_id], references: [id])
+  user          User              @relation(fields: [user_id], references: [id])
+  category      ExpenseCategory?  @relation(fields: [category_id], references: [id])
+  recurring     RecurringExpense? @relation(fields: [recurring_expense_id], references: [id])
+  taxes         ExpenseTax[]
+  fixedAssets   FixedAsset[]
+  /// El traspaso cuya comisión es este gasto (si lo es).
+  feeOfTransfer AccountTransfer?  @relation("AccountTransferFee")
   /// Quién lo capturó (persona o cuenta del asistente). Nulo = sistema (Shopify, generadores) o histórico.
-  created_by  Int?
-  creator     User?             @relation("ExpenseCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
+  created_by    Int?
+  creator       User?             @relation("ExpenseCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
 
   @@unique([recurring_expense_id, scheduled_due_date])
   @@index([user_id])
@@ -952,4 +961,36 @@ model McpAction {
   @@index([owner_user_id, entity, entity_id])
   @@index([owner_user_id, created_at])
   @@map("mcp_actions")
+}
+
+/// Dinero que pasa de una cuenta del negocio a otra (retiro de Mercado Pago al
+/// banco, depósito de efectivo). No es ingreso ni gasto: sólo mueve el saldo
+/// calculado de las dos cuentas. La comisión, si la hay, es un Expense ligado
+/// (`fee_expense_id`) que vive y muere con el traspaso.
+model AccountTransfer {
+  id              Int      @id @default(autoincrement())
+  from_account_id Int
+  to_account_id   Int
+  amount          Decimal  @db.Decimal(14, 2)
+  /// Medianoche del día del traspaso en la zona del negocio.
+  date            DateTime
+  fee_amount      Decimal  @default(0) @db.Decimal(14, 2)
+  fee_expense_id  Int?     @unique
+  notes           String?
+  user_id         Int
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  from_account Account  @relation("AccountTransferFrom", fields: [from_account_id], references: [id], onDelete: Restrict)
+  to_account   Account  @relation("AccountTransferTo", fields: [to_account_id], references: [id], onDelete: Restrict)
+  fee_expense  Expense? @relation("AccountTransferFee", fields: [fee_expense_id], references: [id], onDelete: SetNull)
+  user         User     @relation("AccountTransferOwner", fields: [user_id], references: [id])
+  /// Quién lo capturó (persona o cuenta del asistente).
+  created_by   Int?
+  creator      User?    @relation("AccountTransferCreatedBy", fields: [created_by], references: [id], onDelete: SetNull)
+
+  @@index([user_id, date])
+  @@index([from_account_id])
+  @@index([to_account_id])
+  @@map("account_transfers")
 }

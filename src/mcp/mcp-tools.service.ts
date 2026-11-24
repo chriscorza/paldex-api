@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { PrismaService } from '../prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
+import { AccountTransfersService } from '../account-transfers/account-transfers.service';
 import { CogsService } from '../cogs/cogs.service';
 import { EmployeesService } from '../employees/employees.service';
 import { ExpenseCategoriesService } from '../expense-categories/expense-categories.service';
@@ -32,6 +33,7 @@ import { defineTaxTools } from './tools/taxes.tools';
 import { definePayrollTools } from './tools/payroll.tools';
 import { defineAssetTools } from './tools/assets.tools';
 import { defineConfigTools } from './tools/config.tools';
+import { defineTransferTools } from './tools/transfers.tools';
 
 export type { ToolCaller } from './toolkit';
 
@@ -54,6 +56,7 @@ export class McpToolsService {
     private readonly toolkit: McpToolkit,
     prisma: PrismaService,
     accounts: AccountsService,
+    accountTransfers: AccountTransfersService,
     cogs: CogsService,
     employees: EmployeesService,
     expenseCategories: ExpenseCategoriesService,
@@ -78,6 +81,7 @@ export class McpToolsService {
     McpToolsService.defineAll(toolkit, {
       prisma,
       accounts,
+      accountTransfers,
       cogs,
       employees,
       expenseCategories,
@@ -112,6 +116,7 @@ export class McpToolsService {
     definePayrollTools(toolkit, services);
     defineAssetTools(toolkit, services);
     defineConfigTools(toolkit, services);
+    defineTransferTools(toolkit, services);
   }
 
   get registry(): readonly ToolDef[] {

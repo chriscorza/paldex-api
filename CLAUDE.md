@@ -307,6 +307,29 @@ This one values what is **left**.
   asset effect (`fixed_assets` key, no version bump — closes saved before it skip that key).
 - It is management depreciation for EBITDA, not tax-exact (no INPC, no immediate deduction).
 
+## Account transfers and computed balances
+
+`/account-transfers` (`account_transfer:*`), MCP `transfer_*`. Money moved between two accounts
+of the same owner. See `openspec/changes/add-account-transfers`.
+
+- **A transfer is neither income nor expense.** It is its own table, read only by
+  `getCashReport`. Never model one as an expense + income pair: that inflates sales and breaks
+  "every paid expense lands in exactly one line".
+- **The fee is a real `Expense`** (`fee_expense_id`, unique), paid from the source account on
+  the transfer date, in the category the caller picks (`fee_category_id` required when
+  `fee_amount > 0`, never guessed: the category type decides the P&L line). It is created,
+  updated and deleted with the transfer, in the same transaction.
+- Both accounts must belong to the books owner, even under `ANY` scope. Accounts with transfers
+  cannot be deleted (FK `RESTRICT` → 409). `CloseGuard` blocks create/update/delete in a closed
+  month (old and new date on update).
+- Dates are calendar days anchored to business-zone midnight (`startOfDayInZone(value.slice(0,10))`).
+- **Computed balance** (`GET /reports/cash`) = `initial_balance` + incomes + transfers in +
+  receivable collections − paid expenses − paid payroll − paid taxes − transfers out − payable
+  payments. With `Account.initial_balance_at`, only movements on or after that day count; without
+  it, the whole history (the old behavior).
+- Migration `20261127120000_add_account_transfers` inserts the permission rows and grants the `OWN`
+  ones to the `ai_agent` role, because `syncCatalog` only grants new permissions to `admin`.
+
 ## Versión del producto y changelog
 
 Paldex tiene **una sola versión semántica**, la del producto entero, no una por servicio

@@ -10,6 +10,7 @@ export class AccountEntity {
   currency: string;
   is_active: boolean;
   initial_balance: number;
+  initial_balance_at: Date | null;
   created_at: Date;
   user_id: number;
 
@@ -22,6 +23,7 @@ export class AccountEntity {
     this.currency = partial.currency ?? 'MXN';
     this.is_active = partial.is_active ?? true;
     this.initial_balance = toMoneyNumber(partial.initial_balance) ?? 0;
+    this.initial_balance_at = partial.initial_balance_at ?? null;
     this.created_at = partial.created_at;
     this.user_id = partial.user_id;
   }
